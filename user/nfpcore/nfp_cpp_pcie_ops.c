@@ -33,7 +33,7 @@
 #include <sys/file.h>
 #include <sys/stat.h>
 
-#include <rte_ethdev_pci.h>
+#include <rte_pci.h>
 #include <rte_string_fns.h>
 
 #include "nfp_cpp.h"
@@ -698,7 +698,7 @@ nfp_acquire_secondary_process_lock(struct nfp_pcie_user *desc)
 	desc->secondary_lock = open(lockfile, O_RDWR | O_CREAT | O_NONBLOCK,
 				    0666);
 	if (desc->secondary_lock < 0) {
-		RTE_LOG(ERR, PMD, "NFP lock for secondary process failed\n");
+		fprintf(stderr, "NFP lock for secondary process failed\n");
 		free(lockfile);
 		return desc->secondary_lock;
 	}
@@ -707,7 +707,7 @@ nfp_acquire_secondary_process_lock(struct nfp_pcie_user *desc)
 	lock.l_whence = SEEK_SET;
 	rc = fcntl(desc->secondary_lock, F_SETLK, &lock);
 	if (rc < 0) {
-		RTE_LOG(ERR, PMD, "NFP lock for secondary process failed\n");
+		fprintf(stderr, "NFP lock for secondary process failed\n");
 		close(desc->secondary_lock);
 	}
 
