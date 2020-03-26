@@ -538,6 +538,139 @@ pci_map_device(struct rte_pci_device *dev)
     return 0;
 }
 
+#define DEFAULT_FW_PATH       "/lib/firmware/netronome"
+
+static int
+nfp_fw_upload(struct rte_pci_device *dev, struct nfp_nsp *nsp, char *card)
+{
+    struct nfp_cpp *cpp = nsp->cpp;
+    int fw_f;
+    char *fw_buf;
+    char fw_name[125];
+    char serial[40];
+    struct stat file_stat;
+    off_t fsize, bytes;
+
+    /* Looking for firmware file in order of priority */
+
+    /* First try to find a firmware image specific for this device */
+    snprintf(serial, sizeof(serial),
+            "serial-%02x-%02x-%02x-%02x-%02x-%02x-%02x-%02x",
+        cpp->serial[0], cpp->serial[1], cpp->serial[2], cpp->serial[3],
+        cpp->serial[4], cpp->serial[5], cpp->interface >> 8,
+        cpp->interface & 0xff);
+
+    snprintf(fw_name, sizeof(fw_name), "%s/%s.nffw", DEFAULT_FW_PATH,
+            serial);
+
+    fprintf(stderr, "Trying with fw file: %s", fw_name);
+    fw_f = open(fw_name, O_RDONLY);
+    if (fw_f >= 0)
+        goto read_fw;
+
+    /* Then try the PCI name */
+    snprintf(fw_name, sizeof(fw_name), "%s/pci-%s.nffw", DEFAULT_FW_PATH,
+            dev->device.name);
+
+    fprintf(stderr, "Trying with fw file: %s", fw_name);
+    fw_f = open(fw_name, O_RDONLY);
+    if (fw_f >= 0)
+        goto read_fw;
+
+    /* Finally try the card type and media */
+    snprintf(fw_name, sizeof(fw_name), "%s/%s", DEFAULT_FW_PATH, card);
+    fprintf(stderr, "Trying with fw file: %s", fw_name);
+    fw_f = open(fw_name, O_RDONLY);
+    if (fw_f < 0) {
+        fprintf(stderr,"Firmware file %s not found.", fw_name);
+        return -ENOENT;
+    }
+
+read_fw:
+    if (fstat(fw_f, &file_stat) < 0) {
+        fprintf(stderr,"Firmware file %s size is unknown", fw_name);
+        close(fw_f);
+        return -ENOENT;
+    }
+
+    fsize = file_stat.st_size;
+    fprintf(stderr,"Firmware file found at %s with size: %" PRIu64 "",
+                fw_name, (uint64_t)fsize);
+
+    fw_buf = malloc((size_t)fsize);
+    if (!fw_buf) {
+        fprintf(stderr,"malloc failed for fw buffer");
+        close(fw_f);
+        return -ENOMEM;
+    }
+    memset(fw_buf, 0, fsize);
+
+    bytes = read(fw_f, fw_buf, fsize);
+    if (bytes != fsize) {
+        fprintf(stderr,"Reading fw to buffer failed."
+                   "Just %" PRIu64 " of %" PRIu64 " bytes read",
+                   (uint64_t)bytes, (uint64_t)fsize);
+        free(fw_buf);
+        close(fw_f);
+        return -EIO;
+    }
+
+    fprintf(stderr,"Uploading the firmware ...");
+    nfp_nsp_load_fw(nsp, fw_buf, bytes);
+    fprintf(stderr,"Done");
+
+    free(fw_buf);
+    close(fw_f);
+
+    return 0;
+}
+
+static int
+nfp_fw_setup(struct rte_pci_device *dev, struct nfp_cpp *cpp,
+         struct nfp_eth_table *nfp_eth_table, struct nfp_hwinfo *hwinfo)
+{
+    struct nfp_nsp *nsp;
+    const char *nfp_fw_model;
+    char card_desc[100];
+    int err = 0;
+
+    nfp_fw_model = nfp_hwinfo_lookup(hwinfo, "assembly.partno");
+
+    if (nfp_fw_model) {
+        fprintf(stderr, "firmware model found: %s", nfp_fw_model);
+    } else {
+        fprintf(stderr,"firmware model NOT found");
+        return -EIO;
+    }
+
+    if (nfp_eth_table->count == 0 || nfp_eth_table->count > 8) {
+        fprintf(stderr,"NFP ethernet table reports wrong ports: %u",
+               nfp_eth_table->count);
+        return -EIO;
+    }
+
+    fprintf(stderr, "NFP ethernet port table reports %u ports",
+               nfp_eth_table->count);
+
+    fprintf(stderr, "Port speed: %u", nfp_eth_table->ports[0].speed);
+
+    snprintf(card_desc, sizeof(card_desc), "nic_%s_%dx%d.nffw",
+            nfp_fw_model, nfp_eth_table->count,
+            nfp_eth_table->ports[0].speed / 1000);
+
+    nsp = nfp_nsp_open(cpp);
+    if (!nsp) {
+        fprintf(stderr,"NFP error when obtaining NSP handle");
+        return -EIO;
+    }
+
+    nfp_nsp_device_soft_reset(nsp);
+    err = nfp_fw_upload(dev, nsp, card_desc);
+
+    nfp_nsp_close(nsp);
+    return err;
+}
+
 int
 pci_probe(struct rte_pci_device *dev)
 {
@@ -582,6 +715,12 @@ pci_probe(struct rte_pci_device *dev)
             __func__);
 
         return -EIO;
+    }
+
+    if (nfp_fw_setup(dev, cpp, nfp_eth_table, hwinfo)) {
+            fprintf(stderr, "Error when uploading firmware");
+            ret = -EIO;
+            goto error;
     }
 
     sym_tbl = nfp_rtsym_table_read(cpp);

@@ -6,7 +6,7 @@ SRCS-MAIN := app_main.c
 OBJS-MAIN := $(SRCS-MAIN:.c=.o)
 DEPS-MAIN := $(SRCS-MAIN:.c=.d)
 
-APP := nfp-user
+APP := nfp-user.out
 
 all: $(APP)
 
