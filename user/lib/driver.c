@@ -9,6 +9,7 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <sys/mman.h>
+#include <sys/sysmacros.h>
 #include <linux/limits.h>
 
 #include <rte_byteorder.h>
@@ -31,31 +32,31 @@
 /* split string into tokens */
 static int
 strsplit(char *string, int stringlen,
-	     char **tokens, int maxtokens, char delim)
+         char **tokens, int maxtokens, char delim)
 {
-	int i, tok = 0;
-	int tokstart = 1; /* first token is right at start of string */
+    int i, tok = 0;
+    int tokstart = 1; /* first token is right at start of string */
 
-	if (string == NULL || tokens == NULL)
-		goto einval_error;
+    if (string == NULL || tokens == NULL)
+        goto einval_error;
 
-	for (i = 0; i < stringlen; i++) {
-		if (string[i] == '\0' || tok >= maxtokens)
-			break;
-		if (tokstart) {
-			tokstart = 0;
-			tokens[tok++] = &string[i];
-		}
-		if (string[i] == delim) {
-			string[i] = '\0';
-			tokstart = 1;
-		}
-	}
-	return tok;
+    for (i = 0; i < stringlen; i++) {
+        if (string[i] == '\0' || tok >= maxtokens)
+            break;
+        if (tokstart) {
+            tokstart = 0;
+            tokens[tok++] = &string[i];
+        }
+        if (string[i] == delim) {
+            string[i] = '\0';
+            tokstart = 1;
+        }
+    }
+    return tok;
 
 einval_error:
-	errno = EINVAL;
-	return -1;
+    errno = EINVAL;
+    return -1;
 }
 
 /*
@@ -64,116 +65,116 @@ einval_error:
 static int
 parse_pci_addr_format(const char *buf, int bufsize, struct rte_pci_addr *addr)
 {
-	/* first split on ':' */
-	union splitaddr {
-		struct {
-			char *domain;
-			char *bus;
-			char *devid;
-			char *function;
-		};
-		char *str[PCI_FMT_NVAL]; /* last element-separator is "." not ":" */
-	} splitaddr;
+    /* first split on ':' */
+    union splitaddr {
+        struct {
+            char *domain;
+            char *bus;
+            char *devid;
+            char *function;
+        };
+        char *str[PCI_FMT_NVAL]; /* last element-separator is "." not ":" */
+    } splitaddr;
 
-	char *buf_copy = strndup(buf, bufsize);
-	if (buf_copy == NULL)
-		return -1;
+    char *buf_copy = strndup(buf, bufsize);
+    if (buf_copy == NULL)
+        return -1;
 
-	if (strsplit(buf_copy, bufsize, splitaddr.str, PCI_FMT_NVAL, ':')
-			!= PCI_FMT_NVAL - 1)
-		goto error;
-	/* final split is on '.' between devid and function */
-	splitaddr.function = strchr(splitaddr.devid,'.');
-	if (splitaddr.function == NULL)
-		goto error;
-	*splitaddr.function++ = '\0';
+    if (strsplit(buf_copy, bufsize, splitaddr.str, PCI_FMT_NVAL, ':')
+            != PCI_FMT_NVAL - 1)
+        goto error;
+    /* final split is on '.' between devid and function */
+    splitaddr.function = strchr(splitaddr.devid,'.');
+    if (splitaddr.function == NULL)
+        goto error;
+    *splitaddr.function++ = '\0';
 
-	/* now convert to int values */
-	errno = 0;
-	addr->domain = strtoul(splitaddr.domain, NULL, 16);
-	addr->bus = strtoul(splitaddr.bus, NULL, 16);
-	addr->devid = strtoul(splitaddr.devid, NULL, 16);
-	addr->function = strtoul(splitaddr.function, NULL, 10);
-	if (errno != 0)
-		goto error;
+    /* now convert to int values */
+    errno = 0;
+    addr->domain = strtoul(splitaddr.domain, NULL, 16);
+    addr->bus = strtoul(splitaddr.bus, NULL, 16);
+    addr->devid = strtoul(splitaddr.devid, NULL, 16);
+    addr->function = strtoul(splitaddr.function, NULL, 10);
+    if (errno != 0)
+        goto error;
 
-	free(buf_copy); /* free the copy made with strdup */
-	return 0;
+    free(buf_copy); /* free the copy made with strdup */
+    return 0;
 error:
-	free(buf_copy);
-	return -1;
+    free(buf_copy);
+    return -1;
 }
 
 /* parse a sysfs (or other) file containing one integer value */
 static int
 parse_sysfs_value(const char *path, unsigned long *val)
 {
-	FILE *f;
-	char buf[BUFSIZ];
-	char *end = NULL;
+    FILE *f;
+    char buf[BUFSIZ];
+    char *end = NULL;
 
-	if ((f = fopen(path, "r")) == NULL) {
-		fprintf(stderr, "%s(): cannot open sysfs value %s\n",
-			__func__, path);
-		return -1;
-	}
+    if ((f = fopen(path, "r")) == NULL) {
+        fprintf(stderr, "%s(): cannot open sysfs value %s\n",
+            __func__, path);
+        return -1;
+    }
 
-	if (fgets(buf, sizeof(buf), f) == NULL) {
-		fprintf(stderr, "%s(): cannot read sysfs value %s\n",
-			__func__, path);
-		fclose(f);
-		return -1;
-	}
-	*val = strtoul(buf, &end, 0);
-	if ((buf[0] == '\0') || (end == NULL) || (*end != '\n')) {
-		fprintf(stderr, "%s(): cannot parse sysfs value %s\n",
-				__func__, path);
-		fclose(f);
-		return -1;
-	}
-	fclose(f);
-	return 0;
+    if (fgets(buf, sizeof(buf), f) == NULL) {
+        fprintf(stderr, "%s(): cannot read sysfs value %s\n",
+            __func__, path);
+        fclose(f);
+        return -1;
+    }
+    *val = strtoul(buf, &end, 0);
+    if ((buf[0] == '\0') || (end == NULL) || (*end != '\n')) {
+        fprintf(stderr, "%s(): cannot parse sysfs value %s\n",
+                __func__, path);
+        fclose(f);
+        return -1;
+    }
+    fclose(f);
+    return 0;
 }
 
 /* parse the "resource" sysfs file */
 static int
 pci_parse_sysfs_resource(const char *filename, struct rte_pci_device *dev)
 {
-	FILE *f;
-	char buf[BUFSIZ];
-	int i;
-	uint64_t phys_addr, end_addr, flags;
-	union pci_resource_info
+    FILE *f;
+    char buf[BUFSIZ];
+    int i;
+    uint64_t phys_addr, end_addr, flags;
+    union pci_resource_info
     {
-		struct {
-			char *phys_addr;
-			char *end_addr;
-			char *flags;
-		};
-		char *ptrs[PCI_RESOURCE_FMT_NVAL];
-	} res_info;
+        struct {
+            char *phys_addr;
+            char *end_addr;
+            char *flags;
+        };
+        char *ptrs[PCI_RESOURCE_FMT_NVAL];
+    } res_info;
 
-	f = fopen(filename, "r");
-	if (f == NULL)
+    f = fopen(filename, "r");
+    if (f == NULL)
     {
-		fprintf(stderr, "Cannot open sysfs resource\n");
-		return -1;
-	}
+        fprintf(stderr, "Cannot open sysfs resource\n");
+        return -1;
+    }
 
-	for (i = 0; i<PCI_MAX_RESOURCE; i++)
+    for (i = 0; i<PCI_MAX_RESOURCE; i++)
     {
 
-		if (fgets(buf, sizeof(buf), f) == NULL)
+        if (fgets(buf, sizeof(buf), f) == NULL)
         {
-			fprintf(stderr,
-				"%s(): cannot read resource\n", __func__);
-			goto error;
-		}
+            fprintf(stderr,
+                "%s(): cannot read resource\n", __func__);
+            goto error;
+        }
 
         if (strsplit(buf, sizeof(buf), res_info.ptrs, 3, ' ') != 3)
         {
-			fprintf(stderr,
-				"%s(): bad resource format\n", __func__);
+            fprintf(stderr,
+                "%s(): bad resource format\n", __func__);
             goto error;
         }
         errno = 0;
@@ -182,25 +183,25 @@ pci_parse_sysfs_resource(const char *filename, struct rte_pci_device *dev)
         flags = strtoull(res_info.flags, NULL, 16);
         if (errno != 0)
         {
-			fprintf(stderr,
-				"%s(): bad resource format\n", __func__);
+            fprintf(stderr,
+                "%s(): bad resource format\n", __func__);
             goto error;
         }
 
-		if (flags & IORESOURCE_MEM)
+        if (flags & IORESOURCE_MEM)
         {
-			dev->mem_resource[i].phys_addr = phys_addr;
-			dev->mem_resource[i].len = end_addr - phys_addr + 1;
-			/* not mapped for now */
-			dev->mem_resource[i].addr = NULL;
-		}
-	}
-	fclose(f);
-	return 0;
+            dev->mem_resource[i].phys_addr = phys_addr;
+            dev->mem_resource[i].len = end_addr - phys_addr + 1;
+            /* not mapped for now */
+            dev->mem_resource[i].addr = NULL;
+        }
+    }
+    fclose(f);
+    return 0;
 
 error:
-	fclose(f);
-	return -1;
+    fclose(f);
+    return -1;
 }
 
 /**
@@ -212,7 +213,6 @@ pci_setup_device(const char *dirname, const struct rte_pci_addr *addr)
     char path[PATH_MAX];
     unsigned long tmp;
     struct rte_pci_device *dev;
-    int ret;
 
     dev = malloc(sizeof(struct rte_pci_device));
     if (dev == NULL)
@@ -221,69 +221,69 @@ pci_setup_device(const char *dirname, const struct rte_pci_addr *addr)
     dev->addr = *addr;
 
     /* Get vendor ID */
-	snprintf(path, sizeof(path), "%s/vendor", dirname);
-	if (parse_sysfs_value(path, &tmp) < 0) {
-		free(dev);
-		return NULL;
-	}
-	dev->id.vendor_id = (uint16_t)tmp;
+    snprintf(path, sizeof(path), "%s/vendor", dirname);
+    if (parse_sysfs_value(path, &tmp) < 0) {
+        free(dev);
+        return NULL;
+    }
+    dev->id.vendor_id = (uint16_t)tmp;
 
-	/* Get device id */
-	snprintf(path, sizeof(path), "%s/device", dirname);
-	if (parse_sysfs_value(path, &tmp) < 0) {
-		free(dev);
-		return NULL;
-	}
-	dev->id.device_id = (uint16_t)tmp;
+    /* Get device id */
+    snprintf(path, sizeof(path), "%s/device", dirname);
+    if (parse_sysfs_value(path, &tmp) < 0) {
+        free(dev);
+        return NULL;
+    }
+    dev->id.device_id = (uint16_t)tmp;
 
-	/* get subsystem_vendor id */
-	snprintf(path, sizeof(path), "%s/subsystem_vendor",
-		 dirname);
-	if (parse_sysfs_value(path, &tmp) < 0) {
-		free(dev);
-		return NULL;
-	}
-	dev->id.subsystem_vendor_id = (uint16_t)tmp;
+    /* get subsystem_vendor id */
+    snprintf(path, sizeof(path), "%s/subsystem_vendor",
+         dirname);
+    if (parse_sysfs_value(path, &tmp) < 0) {
+        free(dev);
+        return NULL;
+    }
+    dev->id.subsystem_vendor_id = (uint16_t)tmp;
 
-	/* get subsystem_device id */
-	snprintf(path, sizeof(path), "%s/subsystem_device",
-		 dirname);
-	if (parse_sysfs_value(path, &tmp) < 0) {
-		free(dev);
-		return NULL;
-	}
-	dev->id.subsystem_device_id = (uint16_t)tmp;
+    /* get subsystem_device id */
+    snprintf(path, sizeof(path), "%s/subsystem_device",
+         dirname);
+    if (parse_sysfs_value(path, &tmp) < 0) {
+        free(dev);
+        return NULL;
+    }
+    dev->id.subsystem_device_id = (uint16_t)tmp;
 
-	/* get class_id */
-	snprintf(path, sizeof(path), "%s/class",
-		 dirname);
-	if (parse_sysfs_value(path, &tmp) < 0) {
-		free(dev);
-		return NULL;
-	}
-	/* the least 24 bits are valid: class, subclass, program interface */
-	dev->id.class_id = (uint32_t)tmp & PCI_CLASS_ANY_ID;
+    /* get class_id */
+    snprintf(path, sizeof(path), "%s/class",
+         dirname);
+    if (parse_sysfs_value(path, &tmp) < 0) {
+        free(dev);
+        return NULL;
+    }
+    /* the least 24 bits are valid: class, subclass, program interface */
+    dev->id.class_id = (uint32_t)tmp & PCI_CLASS_ANY_ID;
 
     /* Set max_cfs */
     dev->max_vfs = 0;
-	snprintf(path, sizeof(path), "%s/max_vfs", dirname);
-	if (!access(path, F_OK) &&
-	    parse_sysfs_value(path, &tmp) == 0)
-		dev->max_vfs = (uint16_t)tmp;
-    
+    snprintf(path, sizeof(path), "%s/max_vfs", dirname);
+    if (!access(path, F_OK) &&
+        parse_sysfs_value(path, &tmp) == 0)
+        dev->max_vfs = (uint16_t)tmp;
+
     /* Set device name */
     snprintf(dev->name, sizeof(dev->name), PCI_PRI_FMT,
-			    addr->domain, addr->bus,
-			    addr->devid, addr->function);
+                addr->domain, addr->bus,
+                addr->devid, addr->function);
     dev->device.name = dev->name;
-    
-	/* parse resources */
-	snprintf(path, sizeof(path), "%s/resource", dirname);
-	if (pci_parse_sysfs_resource(path, dev) < 0) {
-		fprint(stderr, "%s(): cannot parse resource\n", __func__);
-		free(dev);
-		return NULL;
-	}
+
+    /* parse resources */
+    snprintf(path, sizeof(path), "%s/resource", dirname);
+    if (pci_parse_sysfs_resource(path, dev) < 0) {
+        fprintf(stderr, "%s(): cannot parse resource\n", __func__);
+        free(dev);
+        return NULL;
+    }
 
     return dev;
 }
@@ -313,10 +313,10 @@ pci_scan()
     {
         if (e->d_name[0] == '.')
             continue;
-        
+
         if (parse_pci_addr_format(e->d_name, sizeof(e->d_name), &addr) != 0)
             continue;
-        
+
         /* Read vendor and device id*/
         snprintf(path, sizeof(path), "%s/%s/%s",
             "/sys/bus/pci/devices", e->d_name, "vendor");
@@ -333,7 +333,7 @@ pci_scan()
         {
             /* Setup NIC */
             closedir(dir);
-            
+
             snprintf(path, sizeof(path), "%s/%s",
                 "/sys/bus/pci/devices", e->d_name);
             return pci_setup_device(path, &addr);
@@ -342,6 +342,140 @@ pci_scan()
 
     closedir(dir);
     return NULL;
+}
+
+static int
+pci_mknod_uio_dev(const char *sysfs_uio_path, unsigned uio_num)
+{
+    FILE *f;
+    char filename[PATH_MAX];
+    int ret;
+    unsigned major, minor;
+    dev_t dev;
+
+    /* get the name of the sysfs file that contains the major and minor
+     * of the uio device and read its content */
+    snprintf(filename, sizeof(filename), "%s/dev", sysfs_uio_path);
+
+    f = fopen(filename, "r");
+    if (f == NULL) {
+        fprintf(stderr, "%s(): cannot open sysfs to get major:minor\n",
+            __func__);
+        return -1;
+    }
+
+    ret = fscanf(f, "%u:%u", &major, &minor);
+    if (ret != 2) {
+        fprintf(stderr, "%s(): cannot parse sysfs to get major:minor\n",
+            __func__);
+        fclose(f);
+        return -1;
+    }
+    fclose(f);
+
+    /* create the char device "mknod /dev/uioX c major minor" */
+    snprintf(filename, sizeof(filename), "/dev/uio%u", uio_num);
+    dev = makedev(major, minor);
+    ret = mknod(filename, S_IFCHR | S_IRUSR | S_IWUSR, dev);
+    if (ret != 0) {
+        fprintf(stderr, "%s(): mknod() failed %s\n",
+            __func__, strerror(errno));
+        return -1;
+    }
+
+    return ret;
+}
+
+/* Alloc Interrupt Handlers */
+static int
+pci_get_device(struct rte_pci_device *dev)
+{
+    char dirname[PATH_MAX];
+    char cfgname[PATH_MAX];
+    char devname[PATH_MAX]; /* contains the /dev/uioX */
+    int uio_num;
+    struct dirent *e;
+    DIR *dir;
+    struct rte_pci_addr *loc;
+
+    loc = &dev->addr;
+
+    snprintf(dirname, sizeof(dirname),
+            "%s/" PCI_PRI_FMT "/uio", "/sys/bus/pci/devices",
+            loc->domain, loc->bus, loc->devid, loc->function);
+    dir = opendir(dirname);
+    if (dir == NULL) {
+        /* retry with the parent directory */
+        snprintf(dirname, sizeof(dirname),
+                "%s/" PCI_PRI_FMT, "/sys/bus/pci/devices",
+                loc->domain, loc->bus, loc->devid, loc->function);
+        dir = opendir(dirname);
+
+        if (dir == NULL) {
+            fprintf(stderr, "Cannot opendir %s\n", dirname);
+            return -1;
+        }
+    }
+
+    /* take the first file starting with "uio" */
+    while ((e = readdir(dir)) != NULL) {
+        /* format could be uio%d ...*/
+        int shortprefix_len = sizeof("uio") - 1;
+        /* ... or uio:uio%d */
+        int longprefix_len = sizeof("uio:uio") - 1;
+        char *endptr;
+
+        if (strncmp(e->d_name, "uio", 3) != 0)
+            continue;
+
+        /* first try uio%d */
+        errno = 0;
+        uio_num = strtoull(e->d_name + shortprefix_len, &endptr, 10);
+        if (errno == 0 && endptr != (e->d_name + shortprefix_len)) {
+            snprintf(devname, sizeof(devname), "%s/uio%u", dirname, uio_num);
+            break;
+        }
+
+        /* then try uio:uio%d */
+        errno = 0;
+        uio_num = strtoull(e->d_name + longprefix_len, &endptr, 10);
+        if (errno == 0 && endptr != (e->d_name + longprefix_len)) {
+            snprintf(devname, sizeof(devname), "%s/uio:uio%u", dirname, uio_num);
+            break;
+        }
+    }
+    closedir(dir);
+
+    /* No uio resource found */
+    if (e == NULL)
+        return -1;
+
+    if (pci_mknod_uio_dev(devname, uio_num) < 0)
+        fprintf(stderr, "%s(): Cannot create /dev/uio%u\n",
+            __func__, uio_num);
+
+    snprintf(devname, sizeof(devname), "/dev/uio%u", uio_num);
+
+    /* save fd if in primary process */
+    dev->intr_handle.fd = open(devname, O_RDWR);
+    if (dev->intr_handle.fd < 0) {
+        fprintf(stderr, "Cannot open %s: %s\n",
+            devname, strerror(errno));
+        return -1;
+    }
+
+    snprintf(cfgname, sizeof(cfgname),
+            "/sys/class/uio/uio%u/device/config", uio_num);
+    dev->intr_handle.uio_cfg_fd = open(cfgname, O_RDWR);
+    if (dev->intr_handle.uio_cfg_fd < 0) {
+        fprintf(stderr, "Cannot open %s: %s\n",
+            cfgname, strerror(errno));
+        return -1;
+    }
+
+    dev->intr_handle.type = RTE_INTR_HANDLE_UIO;
+
+    return 0;
 }
 
 /* Map PCI device */
@@ -355,6 +489,14 @@ pci_map_device(struct rte_pci_device *dev)
     void* mapaddr;
     char devname[PATH_MAX];
 
+    ret = pci_get_device(dev);
+    if (ret < 0)
+    {
+        fprintf(stderr, "%s(): Unable to get device\n",
+            __func__);
+        return -1;
+    }
+
     /* Map all BARs */
     for (i = 0; i != PCI_MAX_RESOURCE; i++)
     {
@@ -362,7 +504,7 @@ pci_map_device(struct rte_pci_device *dev)
         phaddr = dev->mem_resource[i].phys_addr;
         if (phaddr == 0)
             continue;
-        
+
         snprintf(devname, sizeof(devname),
             "%s/" PCI_PRI_FMT "/resource%d",
             "/sys/bus/pci/devices",
@@ -381,9 +523,9 @@ pci_map_device(struct rte_pci_device *dev)
         close(fd);
         if (mapaddr == MAP_FAILED)
         {
-            fprintf(stderr, 
+            fprintf(stderr,
                 "%s(): cannot mmap(%d, %p, 0x%zx, 0x%llx): %s (%p)\n",
-                __func__, fd, 0, dev->mem_resource[i].len,
+                __func__, fd, NULL, dev->mem_resource[i].len,
                 (unsigned long long) 0,
                 strerror(errno), mapaddr);
             return -1;
@@ -400,17 +542,23 @@ int
 pci_probe(struct rte_pci_device *dev)
 {
     struct nfp_cpp *cpp;
-	struct nfp_hwinfo *hwinfo;
-	struct nfp_rtsym_table *sym_tbl;
-	struct nfp_eth_table *nfp_eth_table = NULL;
-	int total_ports;
-	void *priv = 0;
-	int ret = -ENODEV;
-	int err;
-	int i;
+    struct nfp_hwinfo *hwinfo;
+    struct nfp_rtsym_table *sym_tbl;
+    struct nfp_eth_table *nfp_eth_table = NULL;
+    int total_ports;
+    int ret = -ENODEV;
+    int err;
 
-	if (!dev)
-		return ret;
+    if (!dev)
+        return ret;
+
+    ret = pci_map_device(dev);
+    if (ret < 0)
+    {
+        fprintf(stderr, "%s(): Cannot map device\n",
+            __func__);
+        return -EIO;
+    }
 
     cpp = nfp_cpp_from_device_name(dev, 1);
     if (!cpp)
@@ -436,22 +584,22 @@ pci_probe(struct rte_pci_device *dev)
         return -EIO;
     }
 
-	sym_tbl = nfp_rtsym_table_read(cpp);
-	if (!sym_tbl) {
-		fprintf(stderr, "%s(): Something is wrong with the firmware"
-				" symbol table", __func__);
-		ret = -EIO;
-		goto error;
-	}
+    sym_tbl = nfp_rtsym_table_read(cpp);
+    if (!sym_tbl) {
+        fprintf(stderr, "%s(): Something is wrong with the firmware"
+                " symbol table", __func__);
+        ret = -EIO;
+        goto error;
+    }
 
-	total_ports = nfp_rtsym_read_le(sym_tbl, "nfd_cfg_pf0_num_ports", &err);
-	if (total_ports != (int)nfp_eth_table->count) {
-		fprintf(stderr, "%s(): Inconsistent number of ports",
+    total_ports = nfp_rtsym_read_le(sym_tbl, "nfd_cfg_pf0_num_ports", &err);
+    if (total_ports != (int)nfp_eth_table->count) {
+        fprintf(stderr, "%s(): Inconsistent number of ports",
             __func__);
-		ret = -EIO;
-		goto error;
-	}
-    
+        ret = -EIO;
+        goto error;
+    }
+
     fprintf(stderr, "Total pf ports: %d", total_ports);
 
 error:

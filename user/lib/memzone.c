@@ -1,4 +1,6 @@
 #include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
 #include <errno.h>
 #include <fcntl.h>
 #include <unistd.h>
@@ -28,7 +30,7 @@ static uint16_t _free_mz = MAX_MEMZONES;
  * power-of-two value.
  */
 #define ALIGN_FLOOR(val, align) \
-	(typeof(val))((val) & (~((typeof(val))((align) - 1))))
+    (typeof(val))((val) & (~((typeof(val))((align) - 1))))
 
 /**
  * Macro to align a value to a given power-of-two. The resultant value
@@ -37,7 +39,7 @@ static uint16_t _free_mz = MAX_MEMZONES;
  * value.
  */
 #define ALIGN_CEIL(val, align) \
-	ALIGN_FLOOR(((val) + ((typeof(val)) (align) - 1)), align)
+    ALIGN_FLOOR(((val) + ((typeof(val)) (align) - 1)), align)
 
 /**
  * Convert virtual address to physical address.
@@ -74,31 +76,31 @@ mem_virt2phy(const void* virtaddr)
 
     retval = read(fd, &page, PFN_MASK_SIZE);
     close(fd);
-	if (retval < 0)
+    if (retval < 0)
     {
-		fprintf(stderr, "%s(): cannot read %s: %s\n",
-				__func__, "/proc/self/pagemap", strerror(errno));
-		return MEMZONE_BAD_IOVA;
-	}
+        fprintf(stderr, "%s(): cannot read %s: %s\n",
+                __func__, "/proc/self/pagemap", strerror(errno));
+        return MEMZONE_BAD_IOVA;
+    }
     else if (retval != PFN_MASK_SIZE)
     {
-		fprintf(stderr, "%s(): read %d bytes from %s"
-				"but expected %d:\n",
-				__func__, retval, "/proc/self/pagemap", PFN_MASK_SIZE);
-		return MEMZONE_BAD_IOVA;
-	}
+        fprintf(stderr, "%s(): read %d bytes from %s"
+                "but expected %d:\n",
+                __func__, retval, "/proc/self/pagemap", PFN_MASK_SIZE);
+        return MEMZONE_BAD_IOVA;
+    }
 
-	/*
-	 * the pfn (page frame number) are bits 0-54 (see
-	 * pagemap.txt in linux Documentation)
-	 */
-	if ((page & 0x7fffffffffffffULL) == 0)
-		return MEMZONE_BAD_IOVA;
+    /*
+     * the pfn (page frame number) are bits 0-54 (see
+     * pagemap.txt in linux Documentation)
+     */
+    if ((page & 0x7fffffffffffffULL) == 0)
+        return MEMZONE_BAD_IOVA;
 
-	paddr = ((page & 0x7fffffffffffffULL) * PAGE_SIZE)
-		+ ((unsigned long)virtaddr % PAGE_SIZE);
+    paddr = ((page & 0x7fffffffffffffULL) * PAGE_SIZE)
+        + ((unsigned long)virtaddr % PAGE_SIZE);
 
-	return paddr;
+    return paddr;
 }
 
 /**
@@ -210,7 +212,7 @@ memzone_free(const struct memzone *mz)
     if (mz == NULL)
         return 0;
 
-    addr = mz->addr;
+    addr = (void*) mz->addr;
     len = mz->len;
     ret = munmap(addr, len);
     if (ret < 0)
