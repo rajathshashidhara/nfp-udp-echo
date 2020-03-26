@@ -3,12 +3,31 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include <inttypes.h>
 #include <sys/types.h>
 
+/** Formatting string for PCI device identifier: Ex: 0000:00:01.0 */
+#define PCI_PRI_FMT "%.4" PRIx16 ":%.2" PRIx8 ":%.2" PRIx8 ".%" PRIx8
 #define PCI_PRI_STR_SIZE sizeof("XXXXXXXX:XX:XX.X")
+
+/** Short formatting string, without domain, for PCI device: Ex: 00:01.0 */
+#define PCI_SHORT_PRI_FMT "%.2" PRIx8 ":%.2" PRIx8 ".%" PRIx8
+
+/** Nb. of values in PCI device identifier format string. */
+#define PCI_FMT_NVAL 4
+
+/** Nb. of values in PCI resource format. */
+#define PCI_RESOURCE_FMT_NVAL 3
 
 /** Maximum number of PCI resources. */
 #define PCI_MAX_RESOURCE 6
+
+#define PCI_ANY_ID (0xffff)
+#define PCI_CLASS_ANY_ID (0xffffff)
+
+/** IO resource type: */
+#define IORESOURCE_IO         0x00000100
+#define IORESOURCE_MEM        0x00000200
 
 /**
  * A structure describing an ID for a PCI driver. Each driver provides a
