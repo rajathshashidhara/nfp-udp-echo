@@ -10,7 +10,8 @@ SRCS-NFPCORE += nfp_cppcore.c \
 		nfp_nsp_cmds.c \
 		nfp_nsp_eth.c \
 		nfp_rtsym.c \
-		pci.c
+		pci.c \
+		nfp_cpp_dev.c
 
 OBJS-NFPCORE := $(SRCS-NFPCORE:.c=.o)
 DEPS-NFPCORE := $(SRCS-NFPCORE:.c=.d)

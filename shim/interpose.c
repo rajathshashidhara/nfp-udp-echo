@@ -240,6 +240,7 @@ int ioctl(int fd, unsigned long request, char* argp)
         switch (request)
         {
         case NFP_IOCTL_CPP_IDENTIFICATION:
+            fprintf(stderr, "IOCTL: NFP_IOCTL_CPP_IDENTIFICATION\n");
             if (!argp)
                 return sizeof(ident);
 
@@ -247,29 +248,39 @@ int ioctl(int fd, unsigned long request, char* argp)
             break;
 
         case NFP_IOCTL_FIRMWARE_LOAD:
-        case NFP_IOCTL_FIRMWARE_LAST:
+            fprintf(stderr, "IOCTL: NFP_IOCTL_FIRMWARE_LOAD\n");
             arg_size = NFP_FIRMWARE_MAX;
+            break;
+
+        case NFP_IOCTL_FIRMWARE_LAST:
+            fprintf(stderr, "IOCTL: NFP_IOCTL_FIRMWARE_LAST\n");
+            arg_size = 0;
             break;
         
         case NFP_IOCTL_CPP_AREA_REQUEST:
         case NFP_IOCTL_CPP_AREA_RELEASE:
+            fprintf(stderr, "IOCTL: NFP_IOCTL_CPP_AREA_REQUEST\n");
             arg_size = sizeof(area_req);
             break;
         
         case NFP_IOCTL_CPP_AREA_RELEASE_OBSOLETE:
+            fprintf(stderr, "IOCTL: NFP_IOCTL_CPP_AREA_REQUEST_OBSOLETE\n");
             arg_size = sizeof(area_req.offset);
             break;
         
         case NFP_IOCTL_CPP_EXPL_REQUEST:
+            fprintf(stderr, "IOCTL: NFP_IOCTL_CPP_EXPL_REQUEST\n");
             arg_size = sizeof(explicit_req);
             break;
 
         case NFP_IOCTL_CPP_EVENT_ACQUIRE:
         case NFP_IOCTL_CPP_EVENT_RELEASE:
+            fprintf(stderr, "IOCTL: NFP_IOCTL_CPP_EVENT_ACQUIRE\n");
             arg_size = sizeof(event_req);
             break;
 
         default:
+            fprintf(stderr, "IOCTL: %lu\n", request);
             errno = EINVAL;
             return -1;
         }
@@ -278,13 +289,43 @@ int ioctl(int fd, unsigned long request, char* argp)
         ret = write(fd, &temp, sizeof(temp));
         if (ret < sizeof(temp))
             goto handle_ioctl_error;
-        ret = write(fd, argp, arg_size);
-        if (ret < arg_size)
-            goto handle_ioctl_error;
+        if (arg_size > 0)
+        {
+            ret = write(fd, argp, arg_size);
+            if (ret < arg_size)
+                goto handle_ioctl_error;
+        }
 
         ret = read(fd, &temp, sizeof(temp));
         if (ret < sizeof(temp))
             goto handle_ioctl_error;
+        
+        switch(request)
+        {
+        case NFP_IOCTL_CPP_IDENTIFICATION:
+            ret = read(fd, (void*) &ident, sizeof(ident));
+            if (ret < sizeof(ident))
+                goto handle_ioctl_error;
+            memcpy(argp, (void*) &argp, sizeof(ident));
+            break;
+        case NFP_IOCTL_FIRMWARE_LAST:
+            ret = read(fd, argp, NFP_FIRMWARE_MAX);
+            if (ret < sizeof(NFP_FIRMWARE_MAX))
+                goto handle_ioctl_error;
+            break;
+        case NFP_IOCTL_CPP_AREA_REQUEST:
+            ret = read(fd, (void*) &area_req, sizeof(area_req));
+            if (ret < sizeof(ident))
+                goto handle_ioctl_error;
+            memcpy(argp, (void*) &argp, sizeof(area_req));
+            break;
+        case NFP_IOCTL_CPP_EXPL_REQUEST:
+            ret = read(fd, (void*) &explicit_req, sizeof(explicit_req));
+            if (ret < sizeof(ident))
+                goto handle_ioctl_error;
+            memcpy(argp, (void*) &argp, sizeof(explicit_req));
+            break;
+        }
         
         return (int)temp;
 

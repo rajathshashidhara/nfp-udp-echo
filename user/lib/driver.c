@@ -672,7 +672,7 @@ nfp_fw_setup(struct rte_pci_device *dev, struct nfp_cpp *cpp,
 }
 
 int
-pci_probe(struct rte_pci_device *dev)
+pci_probe(struct rte_pci_device *dev, struct nfp_cpp** cppptr)
 {
     struct nfp_cpp *cpp;
     struct nfp_hwinfo *hwinfo;
@@ -740,7 +740,7 @@ pci_probe(struct rte_pci_device *dev)
     }
 
     fprintf(stderr, "Total pf ports: %d", total_ports);
-
+    *cppptr = cpp;
 error:
     free(nfp_eth_table);
     return ret;
