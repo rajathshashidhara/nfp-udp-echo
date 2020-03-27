@@ -17,6 +17,7 @@
 #define MEM_BARRIER() __asm__ volatile("" ::: "memory")
 
 static int (*libc_open)(const char* pathname, int flags) = NULL;
+static int (*libc_open64)(const char* pathname, int flags) = NULL;
 static int (*libc_openat)(int dirfd, const char* pathname,
     int flags) = NULL;
 static int (*libc_close)(int fd) = NULL;
@@ -50,6 +51,8 @@ int open(const char* pathname, int flags)
     int temp;
     struct sockaddr address;
 
+    fprintf(stderr, "SHIM: %s", __func__);
+
     ensure_init();
 
     if (strcmp(pathname, "/dev/nfp-cpp-0") == 0)
@@ -57,7 +60,7 @@ int open(const char* pathname, int flags)
         fd = socket(AF_UNIX, SOCK_STREAM, 0);
         if (fd < 0)
             return -1;
-        
+
         if (fd >= MAX_FD)
         {
             errno = EMFILE;
@@ -85,8 +88,53 @@ int open(const char* pathname, int flags)
     }
 }
 
+int open64(const char* pathname, int flags)
+{
+    int fd;
+    int temp;
+    struct sockaddr address;
+
+    fprintf(stderr, "SHIM: %s", __func__);
+
+    ensure_init();
+
+    if (strcmp(pathname, "/dev/nfp-cpp-0") == 0)
+    {
+        fd = socket(AF_UNIX, SOCK_STREAM, 0);
+        if (fd < 0)
+            return -1;
+
+        if (fd >= MAX_FD)
+        {
+            errno = EMFILE;
+            return -1;
+        }
+
+        memset(&address, 0, sizeof(struct sockaddr));
+        address.sa_family = AF_UNIX;
+        strcpy(address.sa_data, "/tmp/nfp_cpp");
+        if (connect(fd, &address, sizeof(struct sockaddr)) < 0)
+        {
+            temp = errno;
+            libc_close(fd);
+            errno = temp;
+
+            return -1;
+        }
+
+        fd_status[fd] = FD_CPP;
+        return fd;
+    }
+    else
+    {
+        return libc_open64(pathname, flags);
+    }
+}
+
 int openat(int dirfd, const char* pathname, int flags)
 {
+    fprintf(stderr, "SHIM: %s", __func__);
+
     ensure_init();
 
     if (pathname[0] == '/')
@@ -96,7 +144,7 @@ int openat(int dirfd, const char* pathname, int flags)
     else
     {
         fprintf(stderr, "Relative addressing not supported!\n");
-        
+
         errno = ENOTDIR;
         return -1;
     }
@@ -105,9 +153,11 @@ int openat(int dirfd, const char* pathname, int flags)
 /* TODO: add error checking */
 int close(int fd)
 {
+    fprintf(stderr, "SHIM: %s", __func__);
+
     ensure_init();
 
-    int ret = close(fd);
+    int ret = libc_close(fd);
 
     if (ret == 0)
     {
@@ -120,6 +170,8 @@ int close(int fd)
 ssize_t pread(int fd, void* buf, size_t count, off_t offset)
 {
     ssize_t ret;
+
+    fprintf(stderr, "SHIM: %s", __func__);
 
     ensure_init();
 
@@ -146,7 +198,7 @@ ssize_t pread(int fd, void* buf, size_t count, off_t offset)
         ret = read(fd, &temp, sizeof(temp));
         if (ret < sizeof(temp))
             goto handle_pread_error;
-        
+
         if (temp < count)
             goto handle_pread_error;
 
@@ -175,6 +227,8 @@ handle_pread_error:
 ssize_t pwrite(int fd, const void* buf, size_t count, off_t offset)
 {
     ssize_t ret;
+
+    fprintf(stderr, "SHIM: %s", __func__);
 
     ensure_init();
 
@@ -226,6 +280,8 @@ handle_pwrite_error:
 
 int ioctl(int fd, unsigned long request, char* argp)
 {
+    fprintf(stderr, "SHIM: %s", __func__);
+
     ensure_init();
 
     if (fd_status[fd] == FD_CPP)
@@ -256,18 +312,18 @@ int ioctl(int fd, unsigned long request, char* argp)
             fprintf(stderr, "IOCTL: NFP_IOCTL_FIRMWARE_LAST\n");
             arg_size = 0;
             break;
-        
+
         case NFP_IOCTL_CPP_AREA_REQUEST:
         case NFP_IOCTL_CPP_AREA_RELEASE:
             fprintf(stderr, "IOCTL: NFP_IOCTL_CPP_AREA_REQUEST\n");
             arg_size = sizeof(area_req);
             break;
-        
+
         case NFP_IOCTL_CPP_AREA_RELEASE_OBSOLETE:
             fprintf(stderr, "IOCTL: NFP_IOCTL_CPP_AREA_REQUEST_OBSOLETE\n");
             arg_size = sizeof(area_req.offset);
             break;
-        
+
         case NFP_IOCTL_CPP_EXPL_REQUEST:
             fprintf(stderr, "IOCTL: NFP_IOCTL_CPP_EXPL_REQUEST\n");
             arg_size = sizeof(explicit_req);
@@ -299,7 +355,7 @@ int ioctl(int fd, unsigned long request, char* argp)
         ret = read(fd, &temp, sizeof(temp));
         if (ret < sizeof(temp))
             goto handle_ioctl_error;
-        
+
         switch(request)
         {
         case NFP_IOCTL_CPP_IDENTIFICATION:
@@ -326,7 +382,7 @@ int ioctl(int fd, unsigned long request, char* argp)
             memcpy(argp, (void*) &argp, sizeof(explicit_req));
             break;
         }
-        
+
         return (int)temp;
 
 handle_ioctl_error:
@@ -353,6 +409,7 @@ static void *bind_symbol(const char *sym)
 static void init(void)
 {
     libc_open = bind_symbol("open");
+    libc_open64 = bind_symbol("open64");
     libc_openat = bind_symbol("openat");
     libc_close = bind_symbol("close");
     libc_pread = bind_symbol("pread");
@@ -376,7 +433,7 @@ static inline void ensure_init(void)
             init();
             MEM_BARRIER();
             init_done = 1;
-        } 
+        }
         else
         {
             while (init_done == 0)

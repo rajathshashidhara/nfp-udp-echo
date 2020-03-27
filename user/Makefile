@@ -10,7 +10,7 @@ APP := nfp-user.out
 
 all: $(APP)
 
-CFLAGS := -O3 -g -Wall -Werror -Wno-format-truncation -I$(DIR) -I$(DIR)/lib/ -I$(DIR)/nfpcore/ -MMD -MP
+CFLAGS := -g3 -Wall -Werror -Wno-format-truncation -I$(DIR) -I$(DIR)/lib/ -I$(DIR)/nfpcore/ -MMD -MP
 LDLIBS := -lm
 
 %.o: %.c
