@@ -563,7 +563,7 @@ nfp_fw_upload(struct rte_pci_device *dev, struct nfp_nsp *nsp, char *card)
     snprintf(fw_name, sizeof(fw_name), "%s/%s.nffw", DEFAULT_FW_PATH,
             serial);
 
-    fprintf(stderr, "Trying with fw file: %s", fw_name);
+    fprintf(stderr, "Trying with fw file: %s\n", fw_name);
     fw_f = open(fw_name, O_RDONLY);
     if (fw_f >= 0)
         goto read_fw;
@@ -572,34 +572,34 @@ nfp_fw_upload(struct rte_pci_device *dev, struct nfp_nsp *nsp, char *card)
     snprintf(fw_name, sizeof(fw_name), "%s/pci-%s.nffw", DEFAULT_FW_PATH,
             dev->device.name);
 
-    fprintf(stderr, "Trying with fw file: %s", fw_name);
+    fprintf(stderr, "Trying with fw file: %s\n", fw_name);
     fw_f = open(fw_name, O_RDONLY);
     if (fw_f >= 0)
         goto read_fw;
 
     /* Finally try the card type and media */
     snprintf(fw_name, sizeof(fw_name), "%s/%s", DEFAULT_FW_PATH, card);
-    fprintf(stderr, "Trying with fw file: %s", fw_name);
+    fprintf(stderr, "Trying with fw file: %s\n", fw_name);
     fw_f = open(fw_name, O_RDONLY);
     if (fw_f < 0) {
-        fprintf(stderr,"Firmware file %s not found.", fw_name);
+        fprintf(stderr,"Firmware file %s not found.\n", fw_name);
         return -ENOENT;
     }
 
 read_fw:
     if (fstat(fw_f, &file_stat) < 0) {
-        fprintf(stderr,"Firmware file %s size is unknown", fw_name);
+        fprintf(stderr,"Firmware file %s size is unknown\n", fw_name);
         close(fw_f);
         return -ENOENT;
     }
 
     fsize = file_stat.st_size;
-    fprintf(stderr,"Firmware file found at %s with size: %" PRIu64 "",
+    fprintf(stderr,"Firmware file found at %s with size: %" PRIu64 "\n",
                 fw_name, (uint64_t)fsize);
 
     fw_buf = malloc((size_t)fsize);
     if (!fw_buf) {
-        fprintf(stderr,"malloc failed for fw buffer");
+        fprintf(stderr,"malloc failed for fw buffer\n");
         close(fw_f);
         return -ENOMEM;
     }
@@ -608,16 +608,16 @@ read_fw:
     bytes = read(fw_f, fw_buf, fsize);
     if (bytes != fsize) {
         fprintf(stderr,"Reading fw to buffer failed."
-                   "Just %" PRIu64 " of %" PRIu64 " bytes read",
+                   "Just %" PRIu64 " of %" PRIu64 " bytes read\n",
                    (uint64_t)bytes, (uint64_t)fsize);
         free(fw_buf);
         close(fw_f);
         return -EIO;
     }
 
-    fprintf(stderr,"Uploading the firmware ...");
+    fprintf(stderr,"Uploading the firmware ...\n");
     nfp_nsp_load_fw(nsp, fw_buf, bytes);
-    fprintf(stderr,"Done");
+    fprintf(stderr,"Done\n");
 
     free(fw_buf);
     close(fw_f);
@@ -644,15 +644,15 @@ nfp_fw_setup(struct rte_pci_device *dev, struct nfp_cpp *cpp,
     }
 
     if (nfp_eth_table->count == 0 || nfp_eth_table->count > 8) {
-        fprintf(stderr,"NFP ethernet table reports wrong ports: %u",
+        fprintf(stderr,"NFP ethernet table reports wrong ports: %u\n",
                nfp_eth_table->count);
         return -EIO;
     }
 
-    fprintf(stderr, "NFP ethernet port table reports %u ports",
+    fprintf(stderr, "NFP ethernet port table reports %u ports\n",
                nfp_eth_table->count);
 
-    fprintf(stderr, "Port speed: %u", nfp_eth_table->ports[0].speed);
+    fprintf(stderr, "Port speed: %u\n", nfp_eth_table->ports[0].speed);
 
     snprintf(card_desc, sizeof(card_desc), "nic_%s_%dx%d.nffw",
             nfp_fw_model, nfp_eth_table->count,
@@ -660,7 +660,7 @@ nfp_fw_setup(struct rte_pci_device *dev, struct nfp_cpp *cpp,
 
     nsp = nfp_nsp_open(cpp);
     if (!nsp) {
-        fprintf(stderr,"NFP error when obtaining NSP handle");
+        fprintf(stderr,"NFP error when obtaining NSP handle\n");
         return -EIO;
     }
 

@@ -173,7 +173,7 @@ const struct memzone* memzone_reserve(size_t len)
 
     snprintf(filename, MEMZONE_FILENAME_LEN, 
             MEMZONE_FILENAME_FMT, mz->handle);
-    fd = open(filename, O_CREAT | O_RDWR);
+    fd = open(filename, O_CREAT | O_RDWR, 0755);
     if (fd < 0)
     {
         fprintf(stderr, "%s(): Cannot create file: %s\n",
