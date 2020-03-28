@@ -716,7 +716,7 @@ pci_probe(struct rte_pci_device *dev, struct nfp_cpp** cppptr)
 
         return -EIO;
     }
-
+/*
     if (nfp_fw_setup(dev, cpp, nfp_eth_table, hwinfo)) {
             fprintf(stderr, "Error when uploading firmware");
             ret = -EIO;
@@ -740,6 +740,7 @@ pci_probe(struct rte_pci_device *dev, struct nfp_cpp** cppptr)
     }
 
     fprintf(stderr, "Total pf ports: %d", total_ports);
+*/
     *cppptr = cpp;
 error:
     free(nfp_eth_table);

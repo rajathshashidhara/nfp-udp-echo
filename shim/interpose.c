@@ -23,7 +23,11 @@ static int (*libc_openat)(int dirfd, const char* pathname,
 static int (*libc_close)(int fd) = NULL;
 static ssize_t (*libc_pread)(int fd, void* buf, size_t count,
             off_t offset) = NULL;
+static ssize_t (*libc_pread64)(int fd, void* buf, size_t count,
+            off_t offset) = NULL;
 static ssize_t (*libc_pwrite)(int fd, const void* buf,
+        size_t count, off_t offset) = NULL;
+static ssize_t (*libc_pwrite64)(int fd, const void* buf,
         size_t count, off_t offset) = NULL;
 static int (*libc_ioctl)(int fd, unsigned long request, char* argp);
 
@@ -224,6 +228,63 @@ handle_pread_error:
         return libc_pread(fd, buf, count, offset);
 }
 
+ssize_t pread64(int fd, void* buf, size_t count, off_t offset)
+{
+    ssize_t ret;
+
+    fprintf(stderr, "SHIM: %s\n", __func__);
+
+    ensure_init();
+
+    if (fd_status[fd] == FD_CPP)
+    {
+        uint64_t temp;
+        ssize_t len;
+
+        temp = (uint64_t) OP_PREAD;
+        ret = write(fd, &temp, sizeof(temp));
+        if (ret < sizeof(temp))
+            goto handle_pread_error;
+
+        temp = (uint64_t) count;
+        ret = write(fd, &temp, sizeof(temp));
+        if (ret < sizeof(temp))
+            goto handle_pread_error;
+
+        temp = (uint64_t) offset;
+        ret = write(fd, &temp, sizeof(temp));
+        if (ret < sizeof(temp))
+            goto handle_pread_error;
+
+        ret = read(fd, &temp, sizeof(temp));
+        if (ret < sizeof(temp))
+            goto handle_pread_error;
+
+        if (temp < count)
+            goto handle_pread_error;
+
+        len = 0;
+        while (len < count)
+        {
+            ret = read(fd, ((char*) buf) + len, count - len);
+            if (ret < 0)
+                goto handle_pread_error;
+            len += ret;
+        }
+
+        return count;
+
+handle_pread_error:
+        fprintf(stderr, "Error when writing to socket: %s",
+            strerror(errno));
+        close(fd);
+        errno = EIO;
+        return -1;
+    }
+    else
+        return libc_pread64(fd, buf, count, offset);
+}
+
 ssize_t pwrite(int fd, const void* buf, size_t count, off_t offset)
 {
     ssize_t ret;
@@ -276,6 +337,60 @@ handle_pwrite_error:
     }
     else
         return libc_pwrite(fd, buf, count, offset);
+}
+
+ssize_t pwrite64(int fd, const void* buf, size_t count, off_t offset)
+{
+    ssize_t ret;
+
+    fprintf(stderr, "SHIM: %s\n", __func__);
+
+    ensure_init();
+
+    if (fd_status[fd] == FD_CPP)
+    {
+        uint64_t temp;
+        ssize_t len;
+
+        temp = (uint64_t) OP_PWRITE;
+        ret = write(fd, &temp, sizeof(temp));
+        if (ret < sizeof(temp))
+            goto handle_pwrite_error;
+
+        temp = (uint64_t) count;
+        ret = write(fd, &temp, sizeof(temp));
+        if (ret < sizeof(temp))
+            goto handle_pwrite_error;
+
+        temp = (uint64_t) offset;
+        ret = write(fd, &temp, sizeof(temp));
+        if (ret < sizeof(temp))
+            goto handle_pwrite_error;
+
+        len = 0;
+        while (len < count)
+        {
+            ret = write(fd, ((char*) buf) + len, count - len);
+            if (ret < 0)
+                goto handle_pwrite_error;
+            len += ret;
+        }
+
+        ret = read(fd, &temp, sizeof(temp));
+        if (ret < sizeof(temp))
+            goto handle_pwrite_error;
+
+        return temp;
+
+handle_pwrite_error:
+        fprintf(stderr, "Error when writing to socket: %s",
+            strerror(errno));
+        close(fd);
+        errno = EIO;
+        return -1;
+    }
+    else
+        return libc_pwrite64(fd, buf, count, offset);
 }
 
 int ioctl(int fd, unsigned long request, char* argp)
@@ -420,6 +535,8 @@ static void init(void)
     libc_close = bind_symbol("close");
     libc_pread = bind_symbol("pread");
     libc_pwrite = bind_symbol("write");
+    libc_pread64 = bind_symbol("pread64");
+    libc_pwrite64 = bind_symbol("pwrite64");
     libc_ioctl = bind_symbol("ioctl");
 }
 
