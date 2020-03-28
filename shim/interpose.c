@@ -350,6 +350,7 @@ int ioctl(int fd, unsigned long request, char* argp)
         ret = write(fd, &temp, sizeof(temp));
         if (ret < sizeof(temp))
             goto handle_ioctl_error;
+
         if (arg_size > 0)
         {
             ret = write(fd, argp, arg_size);
@@ -367,7 +368,7 @@ int ioctl(int fd, unsigned long request, char* argp)
             ret = read(fd, (void*) &ident, sizeof(ident));
             if (ret < sizeof(ident))
                 goto handle_ioctl_error;
-            memcpy(argp, (void*) &ident, sizeof(ident));
+            memcpy(argp, (void*) &ident, ident.size);
             break;
         case NFP_IOCTL_FIRMWARE_LAST:
             ret = read(fd, argp, NFP_FIRMWARE_MAX);
