@@ -248,7 +248,7 @@ static int do_load_fw(struct nfp_cpp_dev_data* data)
     fw_f = open(path, O_RDONLY);
     if (fw_f < 0)
         return -ENOENT;
-    
+
     if (fstat(fw_f, &file_stat) < 0) {
         close(fw_f);
         return -ENOENT;
@@ -278,7 +278,7 @@ static int do_load_fw(struct nfp_cpp_dev_data* data)
 static int nfp_cpp_dev_ioctl(struct nfp_cpp_dev_data* data, int fd,
                 unsigned long request)
 {
-/*
+
     struct nfp_cpp_area_request area_req;
     struct nfp_cpp_event_request event_req;
     struct nfp_cpp_explicit_request explicit_req;
@@ -303,17 +303,23 @@ static int nfp_cpp_dev_ioctl(struct nfp_cpp_dev_data* data, int fd,
 				   (serial[3] << 16) |
 				   (serial[4] <<  8) |
 				   (serial[5] <<  0);
+
+        temp = sizeof(ident);
+        ret = write(fd, &temp, sizeof(temp));
+        if (ret < sizeof(temp))
+            return -1;
+
         ret = write(fd, &ident, sizeof(ident));
         if (ret < sizeof(ident))
             return -1;
         break;
-    
+/*
     case NFP_IOCTL_FIRMWARE_LOAD:
         arg_size = NFP_FIRMWARE_MAX;
         ret = read(fd, data->firmware, NFP_FIRMWARE_MAX);
         if (ret < 0)
             return -1;
-        
+
         fprintf(stderr, "Firmware: %s\n", data->firmware);
         ret = do_load_fw(data);
 
@@ -322,26 +328,26 @@ static int nfp_cpp_dev_ioctl(struct nfp_cpp_dev_data* data, int fd,
         if (ret < sizeof(temp))
             return -1;
         break;
-    
+
     case NFP_IOCTL_FIRMWARE_LAST:
         temp = 0;
         ret = write(fd, &temp, sizeof(temp));
         if (ret < sizeof(temp))
             return -1;
-        
+
         ret = write(fd, data->firmware, sizeof(data->firmware));
         if (ret < sizeof(data->firmware))
             return -1;
         break;
-    
+
     case NFP_IOCTL_CPP_AREA_REQUEST:
-
-
-        
+*/
+    default:
+        return -1;
 
     }
-*/
-    return -1;
+    
+    return 0;
 }
 
 static int nfp_cpp_dev_handle_cmd(struct nfp_cpp_dev_data* data, int fd)
@@ -412,13 +418,13 @@ static int nfp_cpp_dev_poll(struct nfp_cpp_dev_data* data)
             continue;
         }
 
-        if (data->connections[0].revents & (1 << POLLIN))
+        if (data->connections[0].revents & (POLLIN))
         {
             if (data->count < MAX_CONNECTIONS)
             {
                 fd = accept(data->listen_fd, NULL, NULL);
                 data->connections[data->count].fd = fd;
-                data->connections[data->count].events = (1 << POLLIN);
+                data->connections[data->count].events = (POLLIN);
                 data->count++;
             }
         }
@@ -428,8 +434,8 @@ static int nfp_cpp_dev_poll(struct nfp_cpp_dev_data* data)
         {
             if (data->connections[i].revents == 0)
                 continue;
-            
-            if (data->connections[i].revents & (1 << POLLIN))
+
+            if (data->connections[i].revents & (POLLIN))
             {
                 ret = nfp_cpp_dev_handle_cmd(data, data->connections[i].fd);
                 if (ret < 0)
@@ -441,7 +447,7 @@ static int nfp_cpp_dev_poll(struct nfp_cpp_dev_data* data)
                 }
             }
 
-            if (data->connections[i].revents & (1 << POLLHUP))
+            if (data->connections[i].revents & (POLLHUP))
             {
                 close(data->connections[i].fd);
                 data->connections[i].fd = -1;
@@ -458,7 +464,7 @@ static int nfp_cpp_dev_poll(struct nfp_cpp_dev_data* data)
                 if (data->connections[i].fd != -1)
                 {
                     data->connections[j].fd = data->connections[i].fd;
-                    data->connections[j].events = (1 << POLLIN);
+                    data->connections[j].events = (POLLIN);
 
                     j++;
                 }
@@ -475,7 +481,7 @@ int nfp_cpp_dev_main(struct nfp_cpp* cpp)
 {
     int ret;
     struct sockaddr address;
-    struct nfp_cpp_dev_data* data = 
+    struct nfp_cpp_dev_data* data =
             malloc(sizeof(struct nfp_cpp_dev_data));
     if (!data)
     {
@@ -483,6 +489,7 @@ int nfp_cpp_dev_main(struct nfp_cpp* cpp)
         return -1;
     }
 
+    unlink("/tmp/nfp_cpp");
     data->cpp = cpp;
     memset(data->connections, 0, sizeof(data->connections));
     data->listen_fd = socket(AF_UNIX, SOCK_STREAM, 0);
@@ -504,9 +511,9 @@ int nfp_cpp_dev_main(struct nfp_cpp* cpp)
         close(data->listen_fd);
         return -1;
     }
-    
+
     data->connections[0].fd = data->listen_fd;
-    data->connections[0].events = (1 << POLLIN);
+    data->connections[0].events = (POLLIN);
     data->count = 1;
 
     return nfp_cpp_dev_poll(data);

@@ -51,7 +51,7 @@ int open(const char* pathname, int flags)
     int temp;
     struct sockaddr address;
 
-    fprintf(stderr, "SHIM: %s", __func__);
+    fprintf(stderr, "SHIM: %s\n", __func__);
 
     ensure_init();
 
@@ -94,7 +94,7 @@ int open64(const char* pathname, int flags)
     int temp;
     struct sockaddr address;
 
-    fprintf(stderr, "SHIM: %s", __func__);
+    fprintf(stderr, "SHIM: %s\n", __func__);
 
     ensure_init();
 
@@ -133,7 +133,7 @@ int open64(const char* pathname, int flags)
 
 int openat(int dirfd, const char* pathname, int flags)
 {
-    fprintf(stderr, "SHIM: %s", __func__);
+    fprintf(stderr, "SHIM: %s\n", __func__);
 
     ensure_init();
 
@@ -153,7 +153,7 @@ int openat(int dirfd, const char* pathname, int flags)
 /* TODO: add error checking */
 int close(int fd)
 {
-    fprintf(stderr, "SHIM: %s", __func__);
+    fprintf(stderr, "SHIM: %s\n", __func__);
 
     ensure_init();
 
@@ -171,7 +171,7 @@ ssize_t pread(int fd, void* buf, size_t count, off_t offset)
 {
     ssize_t ret;
 
-    fprintf(stderr, "SHIM: %s", __func__);
+    fprintf(stderr, "SHIM: %s\n", __func__);
 
     ensure_init();
 
@@ -228,7 +228,7 @@ ssize_t pwrite(int fd, const void* buf, size_t count, off_t offset)
 {
     ssize_t ret;
 
-    fprintf(stderr, "SHIM: %s", __func__);
+    fprintf(stderr, "SHIM: %s\n", __func__);
 
     ensure_init();
 
@@ -280,7 +280,7 @@ handle_pwrite_error:
 
 int ioctl(int fd, unsigned long request, char* argp)
 {
-    fprintf(stderr, "SHIM: %s", __func__);
+    fprintf(stderr, "SHIM: %s\n", __func__);
 
     ensure_init();
 
@@ -292,6 +292,11 @@ int ioctl(int fd, unsigned long request, char* argp)
         struct nfp_cpp_identification ident;
         uint64_t arg_size, temp;
         int ret;
+
+        temp = (uint64_t) OP_IOCTL;
+        ret = write(fd, &temp, sizeof(temp));
+        if (ret < sizeof(temp))
+            goto handle_ioctl_error;
 
         switch (request)
         {
@@ -362,7 +367,7 @@ int ioctl(int fd, unsigned long request, char* argp)
             ret = read(fd, (void*) &ident, sizeof(ident));
             if (ret < sizeof(ident))
                 goto handle_ioctl_error;
-            memcpy(argp, (void*) &argp, sizeof(ident));
+            memcpy(argp, (void*) &ident, sizeof(ident));
             break;
         case NFP_IOCTL_FIRMWARE_LAST:
             ret = read(fd, argp, NFP_FIRMWARE_MAX);
