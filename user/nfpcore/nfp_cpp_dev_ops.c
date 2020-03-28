@@ -71,7 +71,7 @@ static int ioctl_cpp_identification(struct nfp_cpp_dev_data* data,
     do_cpp_identification(data->cpp, &ident);
 
     /* Send return value */
-    temp = 0;
+    temp = sizeof(ident);
     ret = write(fd, &temp, sizeof(temp));
     if (ret < sizeof(temp))
         return -1;
