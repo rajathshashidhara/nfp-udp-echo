@@ -499,6 +499,12 @@ int ioctl(int fd, unsigned long request, char* argp)
         if (ret < sizeof(temp))
             goto handle_ioctl_error;
 
+        if (((int) temp) < 0)
+        {
+            errno = -((int) temp);
+            return -1;
+        }
+
         switch(request)
         {
         case NFP_IOCTL_CPP_IDENTIFICATION:
@@ -516,13 +522,13 @@ int ioctl(int fd, unsigned long request, char* argp)
             ret = read(fd, (void*) &area_req, sizeof(area_req));
             if (ret < sizeof(ident))
                 goto handle_ioctl_error;
-            memcpy(argp, (void*) &argp, sizeof(area_req));
+            memcpy(argp, (void*) &area_req, sizeof(area_req));
             break;
         case NFP_IOCTL_CPP_EXPL_REQUEST:
             ret = read(fd, (void*) &explicit_req, sizeof(explicit_req));
             if (ret < sizeof(ident))
                 goto handle_ioctl_error;
-            memcpy(argp, (void*) &argp, sizeof(explicit_req));
+            memcpy(argp, (void*) &explicit_req, sizeof(explicit_req));
             break;
         }
 
