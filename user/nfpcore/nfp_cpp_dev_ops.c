@@ -140,6 +140,13 @@ static int nfp_dev_cpp_area_alloc(struct nfp_cpp_dev_data *cdev, uint16_t interf
     return 0;
 }
 
+static void nfp_dev_cpp_area_free(struct nfp_dev_cpp_area *area)
+{
+	list_del(&area->req_list);
+	nfp_cpp_area_free(area->area);
+	free(area);
+}
+
 static int do_cpp_area_request(struct nfp_cpp_dev_data* data,
             uint16_t interface, struct nfp_cpp_area_request* area_req)
 {
@@ -181,17 +188,37 @@ static int do_cpp_area_request(struct nfp_cpp_dev_data* data,
     return err;
 }
 
+static int do_cpp_area_release(struct nfp_cpp_dev_data* data,
+            uint16_t interface, struct nfp_cpp_area_request* area_req)
+{
+	struct nfp_dev_cpp_area *area, *atmp;
+	int err = -ENOENT;
+
+	list_for_each_entry_safe(area, atmp,
+				 &data->req.list, req_list) {
+		if (area->req.offset == area_req->offset) {
+			err = list_empty(&area->vma.list) ? 0 : -EBUSY;
+			if (err == 0)
+				nfp_dev_cpp_area_free(area);
+			break;
+		}
+	}
+
+    return err;
+
+}
+
 static int ioctl_area_request(struct nfp_cpp_dev_data* data, int fd)
 {
-    struct nfp_cpp_area_request* area_req = malloc(sizeof(*area_req));
+    struct nfp_cpp_area_request area_req;
     int err = 0;
 
-    err = read(fd, area_req, sizeof(*area_req));
+    err = read(fd, &area_req, sizeof(area_req));
     if (err < sizeof(area_req))
         return -1;
 
     uint16_t interface = nfp_cpp_interface(data->cpp);
-    err = do_cpp_area_request(data, interface, area_req);
+    err = do_cpp_area_request(data, interface, &area_req);
 
     uint64_t temp;
     temp = (uint64_t) err;
@@ -199,10 +226,31 @@ static int ioctl_area_request(struct nfp_cpp_dev_data* data, int fd)
     if (err < sizeof(temp))
         return -1;
 
-    err = write(fd, area_req, sizeof(*area_req));
+    err = write(fd, &area_req, sizeof(area_req));
     if (err < sizeof(area_req))
         return -1;
 
+    return 0;
+}
+
+static int ioctl_area_release(struct nfp_cpp_dev_data* data, int fd)
+{
+    struct nfp_cpp_area_request area_req;
+    int err = 0;
+
+    err = read(fd, &area_req, sizeof(area_req));
+    if (err < sizeof(area_req))
+        return -1;
+
+    uint16_t interface = nfp_cpp_interface(data->cpp);
+    err = do_cpp_area_release(data, interface, &area_req);
+    
+    uint64_t temp;
+    temp = (uint64_t) err;
+    err = write(fd, &temp, sizeof(temp));
+    if (err < sizeof(temp))
+        return -1;
+    
     return 0;
 }
 
@@ -216,6 +264,9 @@ int nfp_cpp_dev_ioctl(struct nfp_cpp_dev_data* data, int fd,
 
     case NFP_IOCTL_CPP_AREA_REQUEST:
         return ioctl_area_request(data, fd);
+    
+    case NFP_IOCTL_CPP_AREA_RELEASE:
+        return ioctl_area_release(data, fd);
 
     default:
         fprintf(stderr, "%s(): Invalid request type\n", __func__);
