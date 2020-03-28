@@ -456,8 +456,12 @@ int ioctl(int fd, unsigned long request, char* argp)
             break;
 
         case NFP_IOCTL_CPP_AREA_REQUEST:
-        case NFP_IOCTL_CPP_AREA_RELEASE:
             fprintf(stderr, "IOCTL: NFP_IOCTL_CPP_AREA_REQUEST\n");
+            arg_size = sizeof(area_req);
+            break;
+
+        case NFP_IOCTL_CPP_AREA_RELEASE:
+            fprintf(stderr, "IOCTL: NFP_IOCTL_CPP_AREA_RELEASE\n");
             arg_size = sizeof(area_req);
             break;
 
@@ -472,8 +476,12 @@ int ioctl(int fd, unsigned long request, char* argp)
             break;
 
         case NFP_IOCTL_CPP_EVENT_ACQUIRE:
-        case NFP_IOCTL_CPP_EVENT_RELEASE:
             fprintf(stderr, "IOCTL: NFP_IOCTL_CPP_EVENT_ACQUIRE\n");
+            arg_size = sizeof(event_req);
+            break;
+
+        case NFP_IOCTL_CPP_EVENT_RELEASE:
+            fprintf(stderr, "IOCTL: NFP_IOCTL_CPP_EVENT_RELEASE\n");
             arg_size = sizeof(event_req);
             break;
 
