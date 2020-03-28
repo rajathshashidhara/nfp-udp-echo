@@ -185,5 +185,9 @@ int nfp_cpp_dev_main(struct nfp_cpp* cpp)
     data->connections[0].events = (POLLIN);
     data->count = 1;
 
+    INIT_LIST_HEAD(&data->event.list);
+    INIT_LIST_HEAD(&data->area.list);
+    INIT_LIST_HEAD(&data->req.list);
+
     return nfp_cpp_dev_poll(data);
 }
