@@ -104,25 +104,17 @@ int nfp_cpp_dev_write(struct nfp_cpp_dev_data* data,
         int fd, size_t count, off_t offset)
 {
     char* buf = (char*) malloc(count);
+	char* buff = buf;
 	struct nfp_cpp_area *area;
 	off_t nfp_offset;
 	uint32_t cpp_id, pos, len;
 	size_t curlen, totlen = 0;
 	int err = 0;
     uint64_t tmp;
+	uint32_t tmpbuf[16];
 
-	/* Obtain target's CPP ID and offset in target */
-	cpp_id = (offset >> 40) << 8;
-	nfp_offset = offset & ((1ull << 40) - 1);
-
-    curlen = 0;
-	/* Adjust length if not aligned */
-	if (((nfp_offset + (off_t)count - 1) & ~(NFP_CPP_MEMIO_BOUNDARY - 1)) !=
-	    (nfp_offset & ~(NFP_CPP_MEMIO_BOUNDARY - 1))) {
-		curlen = NFP_CPP_MEMIO_BOUNDARY -
-			(nfp_offset & (NFP_CPP_MEMIO_BOUNDARY - 1));
-	}
-
+	/* Read data from user */
+	curlen = 0;
     while (curlen < count)
     {
         err = read(fd, buf + curlen, count - curlen);
@@ -134,38 +126,59 @@ int nfp_cpp_dev_write(struct nfp_cpp_dev_data* data,
         curlen += err;
     }
 
+	/* Obtain target's CPP ID and offset in target */
+	cpp_id = (offset >> 40) << 8;
+	nfp_offset = offset & ((1ull << 40) - 1);
+
+
+	/* Adjust length if not aligned */
+	if (((nfp_offset + (off_t)count - 1) & ~(NFP_CPP_MEMIO_BOUNDARY - 1)) !=
+	    (nfp_offset & ~(NFP_CPP_MEMIO_BOUNDARY - 1))) {
+		curlen = NFP_CPP_MEMIO_BOUNDARY -
+			(nfp_offset & (NFP_CPP_MEMIO_BOUNDARY - 1));
+	}
+
+	curlen = count;
 	while (count > 0) {
 		/* configure a CPP PCIe2CPP BAR for mapping the CPP target */
 		area = nfp_cpp_area_alloc_with_name(data->cpp, cpp_id, "nfp.cdev",
 						    nfp_offset, curlen);
 		if (!area) {
-            err = EIO;
+            err = -EIO;
 			goto handle_write_error;
 		}
 
-		/* mapping the target */
 		err = nfp_cpp_area_acquire(area);
 		if (err < 0) {
 			nfp_cpp_area_free(area);
-            err = EIO;
+            err = -EIO;
 			goto handle_write_error;
 		}
 
 		for (pos = 0; pos < curlen; pos += len) {
 			len = curlen - pos;
-			err = nfp_cpp_area_write(area, pos, buf + totlen + pos, len);
+			if (len > sizeof(tmpbuf))
+				len = sizeof(tmpbuf);
+
+			memcpy(tmpbuf, buff + pos, len);
+
+			err = nfp_cpp_area_write(area, pos, tmpbuf, len);
 			if (err < 0) {
 				nfp_cpp_area_release(area);
 				nfp_cpp_area_free(area);
-                err = EIO;
+                err = -EIO;
                 goto handle_write_error;
 			}
 		}
 
 		nfp_offset += pos;
 		totlen += pos;
+		buff += pos;
 		nfp_cpp_area_release(area);
 		nfp_cpp_area_free(area);
+
+		if (err < 0)
+			goto handle_write_error;
 
 		count -= pos;
 		curlen = (count > NFP_CPP_MEMIO_BOUNDARY) ?
@@ -198,10 +211,12 @@ int nfp_cpp_dev_read(struct nfp_cpp_dev_data* data,
         int fd, size_t count, off_t offset)
 {
     char* buf = (char*) malloc(count);
+	char* buff = buf;
 	struct nfp_cpp_area *area;
 	off_t nfp_offset;
 	uint32_t cpp_id, pos, len;
-	size_t curlen, totlen = 0;
+	size_t curlen = count, totlen = 0;
+	uint32_t tmpbuf[16];
 	int err = 0;
     uint64_t tmp;
 
@@ -216,7 +231,6 @@ int nfp_cpp_dev_read(struct nfp_cpp_dev_data* data,
 			(nfp_offset & (NFP_CPP_MEMIO_BOUNDARY - 1));
 	}
 
-    curlen = count;
 	while (count > 0) {
 		area = nfp_cpp_area_alloc_with_name(data->cpp, cpp_id, "nfp.cdev",
 						    nfp_offset, curlen);
@@ -232,30 +246,33 @@ int nfp_cpp_dev_read(struct nfp_cpp_dev_data* data,
             goto handle_read_error;
 		}
 
-		for (pos = 0; pos < curlen; pos += len) {
+		for (pos = 0; pos < curlen; pos += len)
+		{
 			len = curlen - pos;
-			if (len > count)
-				len = count;
+			if (len > sizeof(tmpbuf))
+				len = sizeof(tmpbuf);
 
-			err = nfp_cpp_area_read(area, pos, buf + totlen + pos, len);
-			if (err < 0) {
-				nfp_cpp_area_release(area);
-				nfp_cpp_area_free(area);
-                err = -EIO;
-                goto handle_read_error;
-			}
+			err = nfp_cpp_area_read(area, pos, tmpbuf, len);
+			if (err < 0)
+				break;
+			memcpy(buff + pos, tmpbuf, len);
 		}
 
 		nfp_offset += pos;
 		totlen += pos;
+		buff += pos;
 		nfp_cpp_area_release(area);
 		nfp_cpp_area_free(area);
+
+		if (err < 0)
+			goto handle_read_error;
 
 		count -= pos;
 		curlen = (count > NFP_CPP_MEMIO_BOUNDARY) ?
 			NFP_CPP_MEMIO_BOUNDARY : count;
 	}
 
+	/* Send return value */
     tmp = (uint64_t) totlen;
     err = write(fd, &tmp, sizeof(tmp));
     if (err < sizeof(tmp))

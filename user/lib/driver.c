@@ -538,6 +538,7 @@ pci_map_device(struct rte_pci_device *dev)
     return 0;
 }
 
+/*
 #define DEFAULT_FW_PATH       "/lib/firmware/netronome"
 
 static int
@@ -551,9 +552,9 @@ nfp_fw_upload(struct rte_pci_device *dev, struct nfp_nsp *nsp, char *card)
     struct stat file_stat;
     off_t fsize, bytes;
 
-    /* Looking for firmware file in order of priority */
+    // Looking for firmware file in order of priority
 
-    /* First try to find a firmware image specific for this device */
+    // First try to find a firmware image specific for this device
     snprintf(serial, sizeof(serial),
             "serial-%02x-%02x-%02x-%02x-%02x-%02x-%02x-%02x",
         cpp->serial[0], cpp->serial[1], cpp->serial[2], cpp->serial[3],
@@ -568,7 +569,7 @@ nfp_fw_upload(struct rte_pci_device *dev, struct nfp_nsp *nsp, char *card)
     if (fw_f >= 0)
         goto read_fw;
 
-    /* Then try the PCI name */
+    // Then try the PCI name
     snprintf(fw_name, sizeof(fw_name), "%s/pci-%s.nffw", DEFAULT_FW_PATH,
             dev->device.name);
 
@@ -577,7 +578,7 @@ nfp_fw_upload(struct rte_pci_device *dev, struct nfp_nsp *nsp, char *card)
     if (fw_f >= 0)
         goto read_fw;
 
-    /* Finally try the card type and media */
+    // Finally try the card type and media
     snprintf(fw_name, sizeof(fw_name), "%s/%s", DEFAULT_FW_PATH, card);
     fprintf(stderr, "Trying with fw file: %s\n", fw_name);
     fw_f = open(fw_name, O_RDONLY);
@@ -670,17 +671,18 @@ nfp_fw_setup(struct rte_pci_device *dev, struct nfp_cpp *cpp,
     nfp_nsp_close(nsp);
     return err;
 }
+*/
 
 int
 pci_probe(struct rte_pci_device *dev, struct nfp_cpp** cppptr)
 {
     struct nfp_cpp *cpp;
     struct nfp_hwinfo *hwinfo;
-    struct nfp_rtsym_table *sym_tbl;
     struct nfp_eth_table *nfp_eth_table = NULL;
-    int total_ports;
+    // struct nfp_rtsym_table *sym_tbl;
+    // int total_ports;
+    // int err;
     int ret = -ENODEV;
-    int err;
 
     if (!dev)
         return ret;

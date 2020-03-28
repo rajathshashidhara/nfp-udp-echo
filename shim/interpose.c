@@ -203,19 +203,23 @@ ssize_t pread(int fd, void* buf, size_t count, off_t offset)
         if (ret < sizeof(temp))
             goto handle_pread_error;
 
-        if (temp < count)
-            goto handle_pread_error;
+        ret = (int) temp;
+        if (ret < 0)
+        {
+            errno = -ret;
+            return -1;
+        }
 
         len = 0;
-        while (len < count)
+        while (len < temp)
         {
-            ret = read(fd, ((char*) buf) + len, count - len);
+            ret = read(fd, ((char*) buf) + len, temp - len);
             if (ret < 0)
                 goto handle_pread_error;
             len += ret;
         }
 
-        return count;
+        return temp;
 
 handle_pread_error:
         fprintf(stderr, "Error when writing to socket: %s",
@@ -260,19 +264,23 @@ ssize_t pread64(int fd, void* buf, size_t count, off_t offset)
         if (ret < sizeof(temp))
             goto handle_pread_error;
 
-        if (temp < count)
-            goto handle_pread_error;
+        ret = (int) temp;
+        if (ret < 0)
+        {
+            errno = -ret;
+            return -1;
+        }
 
         len = 0;
-        while (len < count)
+        while (len < temp)
         {
-            ret = read(fd, ((char*) buf) + len, count - len);
+            ret = read(fd, ((char*) buf) + len, temp - len);
             if (ret < 0)
                 goto handle_pread_error;
             len += ret;
         }
 
-        return count;
+        return temp;
 
 handle_pread_error:
         fprintf(stderr, "Error when writing to socket: %s",
@@ -325,6 +333,13 @@ ssize_t pwrite(int fd, const void* buf, size_t count, off_t offset)
         ret = read(fd, &temp, sizeof(temp));
         if (ret < sizeof(temp))
             goto handle_pwrite_error;
+
+        ret = (int) temp;
+        if (ret < 0)
+        {
+            errno = -ret;
+            return -1;
+        }
 
         return temp;
 
@@ -379,6 +394,13 @@ ssize_t pwrite64(int fd, const void* buf, size_t count, off_t offset)
         ret = read(fd, &temp, sizeof(temp));
         if (ret < sizeof(temp))
             goto handle_pwrite_error;
+
+        ret = (int) temp;
+        if (ret < 0)
+        {
+            errno = -ret;
+            return -1;
+        }
 
         return temp;
 
