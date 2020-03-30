@@ -2,17 +2,8 @@
  * Copyright(c) 2010-2014 Intel Corporation
  */
 
-#ifndef _RTE_ATOMIC_X86_H_
-#define _RTE_ATOMIC_X86_H_
-
-#ifdef __cplusplus
-extern "C" {
-#endif
-
-#include <stdint.h>
-#include <rte_common.h>
-<<<<<<< HEAD
-#include <emmintrin.h>
+#ifndef _RTE_ATOMIC_H_
+#define _RTE_ATOMIC_H_
 
 /**
  * @file
@@ -34,6 +25,7 @@ extern "C" {
  *
  * Guarantees that the LOAD and STORE operations generated before the
  * barrier occur before the LOAD and STORE operations generated after.
+ * This function is architecture dependent.
  */
 static inline void rte_mb(void);
 
@@ -42,6 +34,7 @@ static inline void rte_mb(void);
  *
  * Guarantees that the STORE operations generated before the barrier
  * occur before the STORE operations generated after.
+ * This function is architecture dependent.
  */
 static inline void rte_wmb(void);
 
@@ -50,6 +43,7 @@ static inline void rte_wmb(void);
  *
  * Guarantees that the LOAD operations generated before the barrier
  * occur before the LOAD operations generated after.
+ * This function is architecture dependent.
  */
 static inline void rte_rmb(void);
 ///@}
@@ -218,7 +212,7 @@ rte_atomic16_exchange(volatile uint16_t *dst, uint16_t val);
 static inline uint16_t
 rte_atomic16_exchange(volatile uint16_t *dst, uint16_t val)
 {
-#if defined(__clang__)
+#if defined(RTE_ARCH_ARM64) && defined(RTE_TOOLCHAIN_CLANG)
 	return __atomic_exchange_n(dst, val, __ATOMIC_SEQ_CST);
 #else
 	return __atomic_exchange_2(dst, val, __ATOMIC_SEQ_CST);
@@ -501,7 +495,7 @@ rte_atomic32_exchange(volatile uint32_t *dst, uint32_t val);
 static inline uint32_t
 rte_atomic32_exchange(volatile uint32_t *dst, uint32_t val)
 {
-#if defined(__clang__)
+#if defined(RTE_ARCH_ARM64) && defined(RTE_TOOLCHAIN_CLANG)
 	return __atomic_exchange_n(dst, val, __ATOMIC_SEQ_CST);
 #else
 	return __atomic_exchange_4(dst, val, __ATOMIC_SEQ_CST);
@@ -783,7 +777,7 @@ rte_atomic64_exchange(volatile uint64_t *dst, uint64_t val);
 static inline uint64_t
 rte_atomic64_exchange(volatile uint64_t *dst, uint64_t val)
 {
-#if defined(__clang__)
+#if defined(RTE_ARCH_ARM64) && defined(RTE_TOOLCHAIN_CLANG)
 	return __atomic_exchange_n(dst, val, __ATOMIC_SEQ_CST);
 #else
 	return __atomic_exchange_8(dst, val, __ATOMIC_SEQ_CST);
@@ -1088,544 +1082,5 @@ static inline void rte_atomic64_clear(rte_atomic64_t *v)
 }
 #endif
 
-/*------------------------ 128 bit atomic operations -------------------------*/
+#endif /* _RTE_ATOMIC_H_ */
 
-#ifdef __DOXYGEN__
-
-/**
- * An atomic compare and set function used by the mutex functions.
- * (Atomically) Equivalent to:
- * @code
- *   if (*dst == *exp)
- *     *dst = *src
- *   else
- *     *exp = *dst
- * @endcode
- *
- * @note This function is currently only available for the x86-64 platform.
- *
- * @note The success and failure arguments must be one of the __ATOMIC_* values
- * defined in the C++11 standard. For details on their behavior, refer to the
- * standard.
- *
- * @param dst
- *   The destination into which the value will be written.
- * @param exp
- *   Pointer to the expected value. If the operation fails, this memory is
- *   updated with the actual value.
- * @param src
- *   Pointer to the new value.
- * @param weak
- *   A value of true allows the comparison to spuriously fail and allows the
- *   'exp' update to occur non-atomically (i.e. a torn read may occur).
- *   Implementations may ignore this argument and only implement the strong
- *   variant.
- * @param success
- *   If successful, the operation's memory behavior conforms to this (or a
- *   stronger) model.
- * @param failure
- *   If unsuccessful, the operation's memory behavior conforms to this (or a
- *   stronger) model. This argument cannot be __ATOMIC_RELEASE,
- *   __ATOMIC_ACQ_REL, or a stronger model than success.
- * @return
- *   Non-zero on success; 0 on failure.
- */
-__rte_experimental
-static inline int
-rte_atomic128_cmp_exchange(rte_int128_t *dst,
-			   rte_int128_t *exp,
-			   const rte_int128_t *src,
-			   unsigned int weak,
-			   int success,
-			   int failure);
-
-#endif /* __DOXYGEN__ */
-=======
-#include <rte_config.h>
-#include <emmintrin.h>
-#include "generic/rte_atomic.h"
->>>>>>> RX/TX manager in user space driver. Only RX works, TX needs some changes and testing.
-
-#if RTE_MAX_LCORE == 1
-#define MPLOCKED                        /**< No need to insert MP lock prefix. */
-#else
-#define MPLOCKED        "lock ; "       /**< Insert MP lock prefix. */
-#endif
-
-#define	rte_mb() _mm_mfence()
-
-#define	rte_wmb() _mm_sfence()
-
-#define	rte_rmb() _mm_lfence()
-
-#define rte_smp_wmb() rte_compiler_barrier()
-
-#define rte_smp_rmb() rte_compiler_barrier()
-
-/*
- * From Intel Software Development Manual; Vol 3;
- * 8.2.2 Memory Ordering in P6 and More Recent Processor Families:
- * ...
- * . Reads are not reordered with other reads.
- * . Writes are not reordered with older reads.
- * . Writes to memory are not reordered with other writes,
- *   with the following exceptions:
- *   . streaming stores (writes) executed with the non-temporal move
- *     instructions (MOVNTI, MOVNTQ, MOVNTDQ, MOVNTPS, and MOVNTPD); and
- *   . string operations (see Section 8.2.4.1).
- *  ...
- * . Reads may be reordered with older writes to different locations but not
- * with older writes to the same location.
- * . Reads or writes cannot be reordered with I/O instructions,
- * locked instructions, or serializing instructions.
- * . Reads cannot pass earlier LFENCE and MFENCE instructions.
- * . Writes ... cannot pass earlier LFENCE, SFENCE, and MFENCE instructions.
- * . LFENCE instructions cannot pass earlier reads.
- * . SFENCE instructions cannot pass earlier writes ...
- * . MFENCE instructions cannot pass earlier reads, writes ...
- *
- * As pointed by Java guys, that makes possible to use lock-prefixed
- * instructions to get the same effect as mfence and on most modern HW
- * that gives a better perfomance then using mfence:
- * https://shipilev.net/blog/2014/on-the-fence-with-dependencies/
- * Basic idea is to use lock prefixed add with some dummy memory location
- * as the destination. From their experiments 128B(2 cache lines) below
- * current stack pointer looks like a good candidate.
- * So below we use that techinque for rte_smp_mb() implementation.
- */
-
-static __rte_always_inline void
-rte_smp_mb(void)
-{
-#ifdef RTE_ARCH_I686
-	asm volatile("lock addl $0, -128(%%esp); " ::: "memory");
-#else
-	asm volatile("lock addl $0, -128(%%rsp); " ::: "memory");
-#endif
-}
-
-#define rte_io_mb() rte_mb()
-
-#define rte_io_wmb() rte_compiler_barrier()
-
-#define rte_io_rmb() rte_compiler_barrier()
-
-#define rte_cio_wmb() rte_compiler_barrier()
-
-#define rte_cio_rmb() rte_compiler_barrier()
-
-/*------------------------- 16 bit atomic operations -------------------------*/
-
-#ifndef RTE_FORCE_INTRINSICS
-static inline int
-rte_atomic16_cmpset(volatile uint16_t *dst, uint16_t exp, uint16_t src)
-{
-	uint8_t res;
-
-	asm volatile(
-			MPLOCKED
-			"cmpxchgw %[src], %[dst];"
-			"sete %[res];"
-			: [res] "=a" (res),     /* output */
-			  [dst] "=m" (*dst)
-			: [src] "r" (src),      /* input */
-			  "a" (exp),
-			  "m" (*dst)
-			: "memory");            /* no-clobber list */
-	return res;
-}
-
-static inline uint16_t
-rte_atomic16_exchange(volatile uint16_t *dst, uint16_t val)
-{
-	asm volatile(
-			MPLOCKED
-			"xchgw %0, %1;"
-			: "=r" (val), "=m" (*dst)
-			: "0" (val),  "m" (*dst)
-			: "memory");         /* no-clobber list */
-	return val;
-}
-
-static inline int rte_atomic16_test_and_set(rte_atomic16_t *v)
-{
-	return rte_atomic16_cmpset((volatile uint16_t *)&v->cnt, 0, 1);
-}
-
-static inline void
-rte_atomic16_inc(rte_atomic16_t *v)
-{
-	asm volatile(
-			MPLOCKED
-			"incw %[cnt]"
-			: [cnt] "=m" (v->cnt)   /* output */
-			: "m" (v->cnt)          /* input */
-			);
-}
-
-static inline void
-rte_atomic16_dec(rte_atomic16_t *v)
-{
-	asm volatile(
-			MPLOCKED
-			"decw %[cnt]"
-			: [cnt] "=m" (v->cnt)   /* output */
-			: "m" (v->cnt)          /* input */
-			);
-}
-
-static inline int rte_atomic16_inc_and_test(rte_atomic16_t *v)
-{
-	uint8_t ret;
-
-	asm volatile(
-			MPLOCKED
-			"incw %[cnt] ; "
-			"sete %[ret]"
-			: [cnt] "+m" (v->cnt),  /* output */
-			  [ret] "=qm" (ret)
-			);
-	return ret != 0;
-}
-
-static inline int rte_atomic16_dec_and_test(rte_atomic16_t *v)
-{
-	uint8_t ret;
-
-	asm volatile(MPLOCKED
-			"decw %[cnt] ; "
-			"sete %[ret]"
-			: [cnt] "+m" (v->cnt),  /* output */
-			  [ret] "=qm" (ret)
-			);
-	return ret != 0;
-}
-
-/*------------------------- 32 bit atomic operations -------------------------*/
-
-static inline int
-rte_atomic32_cmpset(volatile uint32_t *dst, uint32_t exp, uint32_t src)
-{
-	uint8_t res;
-
-	asm volatile(
-			MPLOCKED
-			"cmpxchgl %[src], %[dst];"
-			"sete %[res];"
-			: [res] "=a" (res),     /* output */
-			  [dst] "=m" (*dst)
-			: [src] "r" (src),      /* input */
-			  "a" (exp),
-			  "m" (*dst)
-			: "memory");            /* no-clobber list */
-	return res;
-}
-
-static inline uint32_t
-rte_atomic32_exchange(volatile uint32_t *dst, uint32_t val)
-{
-	asm volatile(
-			MPLOCKED
-			"xchgl %0, %1;"
-			: "=r" (val), "=m" (*dst)
-			: "0" (val),  "m" (*dst)
-			: "memory");         /* no-clobber list */
-	return val;
-}
-
-static inline int rte_atomic32_test_and_set(rte_atomic32_t *v)
-{
-	return rte_atomic32_cmpset((volatile uint32_t *)&v->cnt, 0, 1);
-}
-
-static inline void
-rte_atomic32_inc(rte_atomic32_t *v)
-{
-	asm volatile(
-			MPLOCKED
-			"incl %[cnt]"
-			: [cnt] "=m" (v->cnt)   /* output */
-			: "m" (v->cnt)          /* input */
-			);
-}
-
-static inline void
-rte_atomic32_dec(rte_atomic32_t *v)
-{
-	asm volatile(
-			MPLOCKED
-			"decl %[cnt]"
-			: [cnt] "=m" (v->cnt)   /* output */
-			: "m" (v->cnt)          /* input */
-			);
-}
-
-static inline int rte_atomic32_inc_and_test(rte_atomic32_t *v)
-{
-	uint8_t ret;
-
-	asm volatile(
-			MPLOCKED
-			"incl %[cnt] ; "
-			"sete %[ret]"
-			: [cnt] "+m" (v->cnt),  /* output */
-			  [ret] "=qm" (ret)
-			);
-	return ret != 0;
-}
-
-static inline int rte_atomic32_dec_and_test(rte_atomic32_t *v)
-{
-	uint8_t ret;
-
-	asm volatile(MPLOCKED
-			"decl %[cnt] ; "
-			"sete %[ret]"
-			: [cnt] "+m" (v->cnt),  /* output */
-			  [ret] "=qm" (ret)
-			);
-	return ret != 0;
-}
-#endif
-
-<<<<<<< HEAD
-#include <stdint.h>
-#include <rte_common.h>
-#include <rte_atomic.h>
-
-#ifndef ALLOW_EXPERIMENTAL_API
-
-#define __rte_experimental \
-__attribute__((deprecated("Symbol is not yet part of stable ABI"), \
-section(".text.experimental")))
-
-#else
-
-#define __rte_experimental \
-__attribute__((section(".text.experimental")))
-
-#endif
-
-/*------------------------- 64 bit atomic operations -------------------------*/
-
-#ifndef RTE_FORCE_INTRINSICS
-static inline int
-rte_atomic64_cmpset(volatile uint64_t *dst, uint64_t exp, uint64_t src)
-{
-	uint8_t res;
-
-
-	asm volatile(
-			MPLOCKED
-			"cmpxchgq %[src], %[dst];"
-			"sete %[res];"
-			: [res] "=a" (res),     /* output */
-			  [dst] "=m" (*dst)
-			: [src] "r" (src),      /* input */
-			  "a" (exp),
-			  "m" (*dst)
-			: "memory");            /* no-clobber list */
-
-	return res;
-}
-
-static inline uint64_t
-rte_atomic64_exchange(volatile uint64_t *dst, uint64_t val)
-{
-	asm volatile(
-			MPLOCKED
-			"xchgq %0, %1;"
-			: "=r" (val), "=m" (*dst)
-			: "0" (val),  "m" (*dst)
-			: "memory");         /* no-clobber list */
-	return val;
-}
-
-static inline void
-rte_atomic64_init(rte_atomic64_t *v)
-{
-	v->cnt = 0;
-}
-
-static inline int64_t
-rte_atomic64_read(rte_atomic64_t *v)
-{
-	return v->cnt;
-}
-
-static inline void
-rte_atomic64_set(rte_atomic64_t *v, int64_t new_value)
-{
-	v->cnt = new_value;
-}
-
-static inline void
-rte_atomic64_add(rte_atomic64_t *v, int64_t inc)
-{
-	asm volatile(
-			MPLOCKED
-			"addq %[inc], %[cnt]"
-			: [cnt] "=m" (v->cnt)   /* output */
-			: [inc] "ir" (inc),     /* input */
-			  "m" (v->cnt)
-			);
-}
-
-static inline void
-rte_atomic64_sub(rte_atomic64_t *v, int64_t dec)
-{
-	asm volatile(
-			MPLOCKED
-			"subq %[dec], %[cnt]"
-			: [cnt] "=m" (v->cnt)   /* output */
-			: [dec] "ir" (dec),     /* input */
-			  "m" (v->cnt)
-			);
-}
-
-static inline void
-rte_atomic64_inc(rte_atomic64_t *v)
-{
-	asm volatile(
-			MPLOCKED
-			"incq %[cnt]"
-			: [cnt] "=m" (v->cnt)   /* output */
-			: "m" (v->cnt)          /* input */
-			);
-}
-
-static inline void
-rte_atomic64_dec(rte_atomic64_t *v)
-{
-	asm volatile(
-			MPLOCKED
-			"decq %[cnt]"
-			: [cnt] "=m" (v->cnt)   /* output */
-			: "m" (v->cnt)          /* input */
-			);
-}
-
-static inline int64_t
-rte_atomic64_add_return(rte_atomic64_t *v, int64_t inc)
-{
-	int64_t prev = inc;
-
-	asm volatile(
-			MPLOCKED
-			"xaddq %[prev], %[cnt]"
-			: [prev] "+r" (prev),   /* output */
-			  [cnt] "=m" (v->cnt)
-			: "m" (v->cnt)          /* input */
-			);
-	return prev + inc;
-}
-
-static inline int64_t
-rte_atomic64_sub_return(rte_atomic64_t *v, int64_t dec)
-{
-	return rte_atomic64_add_return(v, -dec);
-}
-
-static inline int rte_atomic64_inc_and_test(rte_atomic64_t *v)
-{
-	uint8_t ret;
-
-	asm volatile(
-			MPLOCKED
-			"incq %[cnt] ; "
-			"sete %[ret]"
-			: [cnt] "+m" (v->cnt), /* output */
-			  [ret] "=qm" (ret)
-			);
-
-	return ret != 0;
-}
-
-static inline int rte_atomic64_dec_and_test(rte_atomic64_t *v)
-{
-	uint8_t ret;
-
-	asm volatile(
-			MPLOCKED
-			"decq %[cnt] ; "
-			"sete %[ret]"
-			: [cnt] "+m" (v->cnt),  /* output */
-			  [ret] "=qm" (ret)
-			);
-	return ret != 0;
-}
-
-static inline int rte_atomic64_test_and_set(rte_atomic64_t *v)
-{
-	return rte_atomic64_cmpset((volatile uint64_t *)&v->cnt, 0, 1);
-}
-
-static inline void rte_atomic64_clear(rte_atomic64_t *v)
-{
-	v->cnt = 0;
-}
-#endif
-
-/*------------------------ 128 bit atomic operations -------------------------*/
-
-/**
- * 128-bit integer structure.
- */
-RTE_STD_C11
-typedef struct {
-	RTE_STD_C11
-	union {
-		uint64_t val[2];
-		__extension__ __int128 int128;
-	};
-} __rte_aligned(16) rte_int128_t;
-
-__rte_experimental
-static inline int
-rte_atomic128_cmp_exchange(rte_int128_t *dst,
-			   rte_int128_t *exp,
-			   const rte_int128_t *src,
-			   unsigned int weak,
-			   int success,
-			   int failure)
-{
-	RTE_SET_USED(weak);
-	RTE_SET_USED(success);
-	RTE_SET_USED(failure);
-	uint8_t res;
-
-	asm volatile (
-		      MPLOCKED
-		      "cmpxchg16b %[dst];"
-		      " sete %[res]"
-		      : [dst] "=m" (dst->val[0]),
-			"=a" (exp->val[0]),
-			"=d" (exp->val[1]),
-			[res] "=r" (res)
-		      : "b" (src->val[0]),
-			"c" (src->val[1]),
-			"a" (exp->val[0]),
-			"d" (exp->val[1]),
-			"m" (dst->val[0])
-		      : "memory");
-
-	return res;
-}
-
-=======
-#ifdef RTE_ARCH_I686
-#include "rte_atomic_32.h"
-#else
-#include "rte_atomic_64.h"
-#endif
-
->>>>>>> RX/TX manager in user space driver. Only RX works, TX needs some changes and testing.
-#ifdef __cplusplus
-}
-#endif
-
-#endif /* _RTE_ATOMIC_X86_H_ */
-<<<<<<< HEAD
-=======
-
->>>>>>> RX/TX manager in user space driver. Only RX works, TX needs some changes and testing.
