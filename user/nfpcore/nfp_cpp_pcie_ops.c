@@ -762,16 +762,18 @@ nfp_pci_find_next_ext_capability(struct rte_pci_device *dev, int cap)
 static int
 nfp6000_set_model(struct rte_pci_device *dev, struct nfp_cpp *cpp)
 {
+/*
 	uint32_t model;
 
-	// if (rte_pci_read_config(dev, &model, 4, 0x2e) < 0) {
-	// 	printf("nfp set model failed\n");
-	// 	return -1;
-	// }
+	if (rte_pci_read_config(dev, &model, 4, 0x2e) < 0) {
+		printf("nfp set model failed\n");
+		return -1;
+	}
 
-	// model  = model << 16;
-	model = __nfp_cpp_model_autodetect(cpp);
-	nfp_cpp_model_set(cpp, model);
+	model  = model << 16;
+*/
+	// model = __nfp_cpp_model_autodetect(cpp);
+	nfp_cpp_model_set(cpp, 0);
 
 	return 0;
 }
@@ -794,7 +796,8 @@ nfp6000_set_interface(struct rte_pci_device *dev, struct nfp_cpp *cpp)
 		return -1;
 	}
 
-	return reg & 0xffff;
+	nfp_cpp_interface_set(cpp, reg & 0xffff);
+	return 0;
 }
 
 static int
