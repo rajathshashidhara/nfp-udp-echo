@@ -715,37 +715,6 @@ nfp_acquire_secondary_process_lock(struct nfp_pcie_user *desc)
 	return rc;
 }
 
-static int
-nfp6000_set_model(struct rte_pci_device *dev, struct nfp_cpp *cpp)
-{
-	uint32_t model;
-
-	if (rte_pci_read_config(dev, &model, 4, 0x2e) < 0) {
-		printf("nfp set model failed\n");
-		return -1;
-	}
-
-	model  = model << 16;
-	nfp_cpp_model_set(cpp, model);
-
-	return 0;
-}
-
-static int
-nfp6000_set_interface(struct rte_pci_device *dev, struct nfp_cpp *cpp)
-{
-	uint16_t interface;
-
-	if (rte_pci_read_config(dev, &interface, 2, 0x154) < 0) {
-		printf("nfp set interface failed\n");
-		return -1;
-	}
-
-	nfp_cpp_interface_set(cpp, interface);
-
-	return 0;
-}
-
 #define PCI_CFG_SPACE_SIZE	256
 #define PCI_CFG_SPACE_EXP_SIZE	4096
 #define PCI_EXT_CAP_ID(header)		(int)(header & 0x0000ffff)
@@ -788,6 +757,44 @@ nfp_pci_find_next_ext_capability(struct rte_pci_device *dev, int cap)
 	}
 
 	return 0;
+}
+
+static int
+nfp6000_set_model(struct rte_pci_device *dev, struct nfp_cpp *cpp)
+{
+	uint32_t model;
+
+	// if (rte_pci_read_config(dev, &model, 4, 0x2e) < 0) {
+	// 	printf("nfp set model failed\n");
+	// 	return -1;
+	// }
+
+	// model  = model << 16;
+	model = __nfp_cpp_model_autodetect(cpp);
+	nfp_cpp_model_set(cpp, model);
+
+	return 0;
+}
+
+static int
+nfp6000_set_interface(struct rte_pci_device *dev, struct nfp_cpp *cpp)
+{
+	int pos;
+	uint32_t reg;
+
+	pos = nfp_pci_find_next_ext_capability(dev, PCI_EXT_CAP_ID_DSN);
+	if (!pos) {
+		printf("PCI_EXT_CAP_ID_DSN not found. nfp set interface failed\n");
+		return -1;
+	}
+
+	if (rte_pci_read_config(dev, &reg, 4, pos + 4) < 0)
+	{
+		printf("nfp set interface failed\n");
+		return -1;
+	}
+
+	return reg & 0xffff;
 }
 
 static int
