@@ -94,6 +94,7 @@ static int nfp_cpp_dev_poll(struct nfp_cpp_dev_data* data)
                 fd = accept(data->listen_fd, NULL, NULL);
                 data->connections[data->count].fd = fd;
                 data->connections[data->count].events = (POLLIN);
+                data->connections[data->count].revents = 0;
                 data->count++;
             }
         }
@@ -134,6 +135,7 @@ static int nfp_cpp_dev_poll(struct nfp_cpp_dev_data* data)
                 {
                     data->connections[j].fd = data->connections[i].fd;
                     data->connections[j].events = (POLLIN);
+                    data->connections[j].revents = 0;
 
                     j++;
                 }
@@ -183,6 +185,7 @@ int nfp_cpp_dev_main(struct nfp_cpp* cpp)
 
     data->connections[0].fd = data->listen_fd;
     data->connections[0].events = (POLLIN);
+    data->connections[0].revents = 0;
     data->count = 1;
 
     INIT_LIST_HEAD(&data->event.list);

@@ -570,7 +570,7 @@ static void init(void)
     libc_openat = bind_symbol("openat");
     libc_close = bind_symbol("close");
     libc_pread = bind_symbol("pread");
-    libc_pwrite = bind_symbol("write");
+    libc_pwrite = bind_symbol("pwrite");
     libc_pread64 = bind_symbol("pread64");
     libc_pwrite64 = bind_symbol("pwrite64");
     libc_ioctl = bind_symbol("ioctl");
