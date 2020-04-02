@@ -8,11 +8,14 @@
 #define _GNU_SOURCE
 #include <sys/types.h>
 #include <sys/socket.h>
+#include <sys/mman.h>
 #include <poll.h>
 #include <asm-generic/ioctl.h>
 #include <unistd.h>
 #include <linux/limits.h>
 
+#include "rte_pci.h"
+#include "rte_io.h"
 #include "nfp_ioctl.h"
 #include "nfp_cpp.h"
 #include "nfp_nsp.h"
@@ -148,7 +151,139 @@ static int nfp_cpp_dev_poll(struct nfp_cpp_dev_data* data)
     return 0;
 }
 
-int nfp_cpp_dev_main(struct nfp_cpp* cpp)
+static void* nfp_bar_resource_start(struct nfp_bar *bar)
+{
+    return ((uint8_t*) bar->resource->addr) + (bar->mask + 1) * (bar->index & 7);
+}
+
+static int nfp_bar_write(struct nfp_cpp_dev_data *data, struct nfp_bar *bar,
+uint32_t newcfg)
+{
+    int base, slot;
+    int xbar;
+
+    base = bar->index >> 3;
+    slot = bar->index & 7;
+
+    if (data->iomem.csr)
+    {
+        xbar = NFP_PCIE_CPP_BAR_PCIETOCPPEXPANSIONBAR(base, slot);
+        rte_write32(newcfg, data->iomem.csr + xbar);
+        /* Readback to ensure BAR is flushed */
+        rte_read32(data->iomem.csr + xbar);
+    }
+    else
+    {
+        xbar = NFP_PCIE_CFG_BAR_PCIETOCPPEXPANSIONBAR(base, slot);
+        if (rte_pci_write_config(data->dev, &newcfg, sizeof(newcfg), xbar) < 0)
+            return -1;
+    }
+    bar->barcfg = newcfg;
+
+    return 0;
+}
+
+static int bar_cmp(const void *aptr, const void *bptr)
+{
+	const struct nfp_bar *a = aptr, *b = bptr;
+
+	if (a->bitsize == b->bitsize)
+		return a->index - b->index;
+	else
+		return a->bitsize - b->bitsize;
+}
+
+static int nfp_enable_bars(struct nfp_cpp_dev_data *data)
+{
+    int i, bars_free;
+    int expl_groups;
+    uint32_t interface;
+    struct nfp_bar *bar;
+	const uint32_t barcfg_explicit[4] = {
+		NFP_PCIE_BAR_PCIE2CPP_MapType(
+			NFP_PCIE_BAR_PCIE2CPP_MapType_EXPLICIT0),
+		NFP_PCIE_BAR_PCIE2CPP_MapType(
+			NFP_PCIE_BAR_PCIE2CPP_MapType_EXPLICIT1),
+		NFP_PCIE_BAR_PCIE2CPP_MapType(
+			NFP_PCIE_BAR_PCIE2CPP_MapType_EXPLICIT2),
+		NFP_PCIE_BAR_PCIE2CPP_MapType(
+			NFP_PCIE_BAR_PCIE2CPP_MapType_EXPLICIT3),
+	};
+
+    bar = &data->bar[0];
+    for (i = 0; i < ARRAY_SIZE(data->bar); i++, bar++)
+    {
+        struct rte_mem_resource* res;
+
+        res = &data->dev->mem_resource[(i >> 3) * 2];
+        if (res->phys_addr == 0) {
+            bar--;
+            continue;
+        }
+
+        bar->barcfg = 0;
+        bar->index = i;
+        bar->mask = (res->len / 8) - 1;
+        bar->bitsize = rte_fls_u64(bar->mask);
+        bar->base = 0;
+        bar->iomem = NULL;
+        bar->resource = res;
+    }
+
+    data->bars = bar - &data->bar[0];
+    if (data->bars < 8) {
+        fprintf(stderr, "No usable BARs found\n");
+        return -EINVAL;
+    }
+
+    bars_free = data->bars;
+
+    interface = nfp_cpp_interface(data->cpp);
+    data->expl.master_id =
+                    ((NFP_CPP_INTERFACE_UNIT_of(interface) & 3) + 4) << 4;
+    data->expl.signal_ref = 0x10;
+
+    if ((bar->mask + 1) >= NFP_PCI_MIN_MAP_SIZE)
+        bar->iomem = nfp_bar_resource_start(bar);
+    bars_free--;
+    data->expl.data = bar->iomem + NFP_PCIE_SRAM + 0x1000;
+    data->iomem.csr = bar->iomem + NFP_PCIE_BAR(0);
+    data->iomem.em = bar->iomem + NFP_PCIE_EM;
+
+    /* Skip bar 1 */
+    expl_groups = 4;
+    bars_free--;
+
+    for (i = 0; i < 4; i++)
+    {
+        int j;
+        if (i >= NFP_PCIE_EXPLICIT_BARS || i >= expl_groups)
+        {
+            data->expl.group[i].bitsize = 0;
+            continue;
+        }
+
+        bar = &data->bar[4 + i];
+        bar->iomem = nfp_bar_resource_start(bar);
+        bars_free--;
+
+        data->expl.group[i].bitsize = bar->bitsize;
+        data->expl.group[i].addr = bar->iomem;
+        nfp_bar_write(data, bar, barcfg_explicit[i]);
+
+        for (j = 0; j < 4; j++)
+            data->expl.group[i].free[j] = 1;
+
+        data->iomem.expl[i] = bar->iomem;
+    }
+
+    qsort(&data->bar[0], data->bars, sizeof(data->bar[0]),
+            bar_cmp);
+
+    return 0;
+}
+
+int nfp_cpp_dev_main(struct rte_pci_device* dev, struct nfp_cpp* cpp)
 {
     int ret;
     struct sockaddr address;
@@ -192,5 +327,12 @@ int nfp_cpp_dev_main(struct nfp_cpp* cpp)
     INIT_LIST_HEAD(&data->area.list);
     INIT_LIST_HEAD(&data->req.list);
 
+    data->dev = dev;
+    if (nfp_enable_bars(data) < 0)
+    {
+        fprintf(stderr, "%s():%d\n", __func__, __LINE__);
+        close(data->listen_fd);
+        return -1;
+    }
     return nfp_cpp_dev_poll(data);
 }

@@ -3,7 +3,7 @@
 
 #include <driver.h>
 
-extern int nfp_cpp_dev_main(struct nfp_cpp* cpp);
+extern int nfp_cpp_dev_main(struct rte_pci_device* dev, struct nfp_cpp* cpp);
 
 int main(int argc, char* argv[])
 {
@@ -25,7 +25,7 @@ int main(int argc, char* argv[])
         return 0;
     }
 
-    nfp_cpp_dev_main(cpp);
+    nfp_cpp_dev_main(dev, cpp);
     fprintf(stderr, "Exit CPP handler\n");
     
     while (1) {}
