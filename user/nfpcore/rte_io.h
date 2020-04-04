@@ -348,7 +348,3 @@ rte_write64(uint64_t value, volatile void *addr)
 #endif /* RTE_OVERRIDE_IO_H */
 
 #endif /* _RTE_IO_H_ */
-<<<<<<< HEAD
-=======
-
->>>>>>> RX/TX manager in user space driver. Only RX works, TX needs some changes and testing.
