@@ -6,6 +6,8 @@
 #ifndef __NFP_RTSYM_H__
 #define __NFP_RTSYM_H__
 
+#include "nfp_mip.h"
+
 #define NFP_RTSYM_TYPE_NONE             0
 #define NFP_RTSYM_TYPE_OBJECT           1
 #define NFP_RTSYM_TYPE_FUNCTION         2

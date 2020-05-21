@@ -1,3 +1,7 @@
+DIR := $(shell pwd)
+
+CFLAGS := -I$(DIR)
+
 SRCS-NFPCORE += nfp_cppcore.c \
 		nfp_cpp_pcie_ops.c \
 		nfp_mutex.c \
@@ -17,8 +21,19 @@ SRCS-NFPCORE += nfp_cppcore.c \
 OBJS-NFPCORE := $(SRCS-NFPCORE:.c=.o)
 DEPS-NFPCORE := $(SRCS-NFPCORE:.c=.d)
 
-%.o: $(NFPCOREDIR)/%.c
-	$(CC) $(CFLAGS) -c $^ -o $@
+CFLAGS += -g3 -O2 -Wall -Werror -Wno-format-truncation -MD -MP -pthread
 
-DEPS += $(DEPS-NFPCORE)
-OBJS += $(OBJS-NFPCORE)
+LIB := libnfpcore.a
+
+all: $(LIB)
+
+$(LIB): $(OBJS-NFPCORE)
+	$(AR) rcu $@ $+
+	ranlib $@
+
+clean:
+	rm -vf $(OBJS-NFPCORE) $(DEPS-NFPCORE) $(LIB)
+
+-include $(DEPS-NFPCORE)
+
+.PHONY: all clean
