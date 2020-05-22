@@ -47,6 +47,7 @@ $(eval $(call microcode.add_flags,blm_obj,-I$(microc_blocks_dir)/blm/_uc))
 # RX Application definition
 #
 $(eval $(call micro_c.compile_with_rtl,rx_obj,rx.c))
+$(eval $(call micro_c.add_src_lib,rx_obj,dma.c))
 $(eval $(call micro_c.add_fw_libs,rx_obj,nfp pkt std net))
 $(eval $(call micro_c.add_flags,rx_obj,-I$(ROOT_SRC_DIR)))
 $(eval $(call micro_c.add_flags,rx_obj,-I$(microc_blocks_dir)/blm))
@@ -57,6 +58,7 @@ $(eval $(call micro_c.force_include,rx_obj,config))
 # TX Application definition
 #
 $(eval $(call micro_c.compile_with_rtl,tx_obj,tx.c))
+$(eval $(call micro_c.add_src_lib,tx_obj,dma.c))
 $(eval $(call micro_c.add_fw_libs,tx_obj,nfp pkt std net))
 $(eval $(call micro_c.add_flags,tx_obj,-I$(ROOT_SRC_DIR)))
 $(eval $(call micro_c.add_flags,tx_obj,-I$(microc_blocks_dir)/blm))
