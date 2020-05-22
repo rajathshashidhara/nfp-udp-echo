@@ -8,8 +8,8 @@
 #include "debug.h"
 #include "dma.h"
 
-__declspec(export cls) volatile struct device_meta_t cfg;
-__declspec(lmem) uint32_t buffer_capacity, packet_size;
+__declspec(export cls) volatile struct device_meta_t cfg = { 0 };
+__shared __lmem uint32_t buffer_capacity, packet_size;
 
 /* CTM credit defines */
 #define MAX_ME_CTM_PKT_CREDITS  256
@@ -19,8 +19,13 @@ __export __shared __cls struct ctm_pkt_credits ctm_credits;
 
 __mem40 void* allocate_packet(struct pkt_t* pkt)
 {
-    /* Allocate CTM Buffer */
     unsigned int pkt_num;
+    __xread blm_buf_handle_t buf;
+    __xwrite struct nbi_meta_catamaran nbi_meta;
+    unsigned int blq;
+    __mem40 void* pkt_ctm_buffer;
+
+    /* Allocate CTM Buffer */
     while (1)
     {
         // Allocate and Replenish Credits
@@ -30,8 +35,7 @@ __mem40 void* allocate_packet(struct pkt_t* pkt)
     }
 
     /* Allocate MU buffer */
-    __xread blm_buf_handle_t buf;
-    unsigned int blq = 0;
+    blq = 0;
     while (1)
     {
         if (blm_buf_alloc(&buf, blq) == 0)
@@ -47,9 +51,9 @@ __mem40 void* allocate_packet(struct pkt_t* pkt)
     pkt->nbi_meta.pkt_info.len = 0;
 
     /* Copy packet metadata to CTM */
-    __mem40 void* pkt_ctm_buffer;
     pkt_ctm_buffer = pkt_ctm_ptr40(__ISLAND, pkt_num, 0);
-    mem_write32(&pkt->nbi_meta, pkt_ctm_buffer, sizeof(pkt->nbi_meta));
+    nbi_meta = pkt->nbi_meta;
+    mem_write32(&nbi_meta, pkt_ctm_buffer, sizeof(struct nbi_meta_catamaran));
 
     pkt_ctm_buffer = pkt_ctm_ptr40(__ISLAND, pkt_num, PKT_NBI_OFFSET);
     return pkt_ctm_buffer;
@@ -61,7 +65,7 @@ void send_packet(struct pkt_t* pkt)
     __gpr struct pkt_ms_info msi_gen;
     unsigned int q_dst, seqr, seq;
 
-    pkt_data = pkt_ctm_ptr40(pkt->nbi_meta.pkt_info.isl, pkt->nbi_meta.pkt_info.pnum);
+    pkt_data = pkt_ctm_ptr40(pkt->nbi_meta.pkt_info.isl, pkt->nbi_meta.pkt_info.pnum, 0);
     q_dst = PORT_TO_CHANNEL(3);    // TODO: Hardcoded based on experience
     seqr = 0;
     seq = 0;
@@ -71,10 +75,10 @@ void send_packet(struct pkt_t* pkt)
     msi_gen = pkt_msd_write(pkt_data, PKT_NBI_OFFSET);
 
     pkt_nbi_send(pkt->nbi_meta.pkt_info.isl,
-                pkt->nbi_meta.pkt_info.pkt_num,
+                pkt->nbi_meta.pkt_info.pnum,
                 &msi_gen,
                 pkt->nbi_meta.pkt_info.len,
-                NBI,
+                0,
                 q_dst,
                 seqr,
                 seq,
@@ -111,8 +115,8 @@ void tx_process(void)
 
     // 3. DMA packet data to CTM buffer
     pcie_addr = cfg.tx_buffer_iova + head;
-    dma_recv(pkt_data + MAC_PREPEND_BYTES, packet_size, pcie_addr);
-    pkt->nbi_meta.pkt_info.len = packet_size + MAC_PREPEND_BYTES;
+    dma_recv((char*) pkt_data + MAC_PREPEND_BYTES, packet_size, pcie_addr);
+    pkt.nbi_meta.pkt_info.len = packet_size + MAC_PREPEND_BYTES;
 
     // 4. Update RingBuffer
     cfg.tx_head = updated_head;
@@ -123,6 +127,8 @@ void tx_process(void)
 
 int main(void)
 {
+    volatile uint64_t start;
+
     /* Restrict to single context */
     if (ctx() != 0)
     {
@@ -130,7 +136,6 @@ int main(void)
     }
 
     /* Wait for start signal to load configuration paramters */
-    volatile uint64_t start;
     while (1)
     {
         start = cfg.start_signal;

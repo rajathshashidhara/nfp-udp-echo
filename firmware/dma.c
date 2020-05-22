@@ -1,5 +1,5 @@
-#include <pcie/compat.h>
-#include <pcie/pcie.h>
+#include <nfp.h>
+#include <nfp/pcie.h>
 
 #include "dma.h"
 
@@ -48,8 +48,8 @@ pcie_dma_desc_setup(__gpr struct nfp_pcie_dma_cmd *cmd,
                         (cmd->__raw[1] & mode_msk_inv));
 
     cmd->cpp_token = 0;
-    cmd->cpp_addr_hi = 0;
-    cmd->cpp_addr_lo = (uint32_t)((uint64_t)nfp_buf & 0xffffffff) + d_off;
+    cmd->cpp_addr_hi = dev_addr_hi;
+    cmd->cpp_addr_lo = dev_addr_lo;
     /* On the 6k the length is length - 1 */
     cmd->length = len - 1;
 }
@@ -62,16 +62,15 @@ static void dma_op(__mem40 void* addr,
     __gpr struct nfp_pcie_dma_cmd dma_cmd;
     __xwrite struct nfp_pcie_dma_cmd dma_cmd_wr;
     SIGNAL cmpl_sig, enq_sig;
-    __mem40 void* addr = pkt_ctm
 
-    pcie_dma_setup(&dma_cmd,
+    pcie_dma_desc_setup(&dma_cmd,
         __signal_number(&cmpl_sig),
         len,
         (uint32_t) (((uint64_t) addr) >> 32),
         (uint32_t) (((uint64_t) addr) & 0xFFFFFFFF));
 
-    dma_cmd.pcie_addr_hi = rx_meta.tail >> 32;
-    dma_cmd.pcie_addr_lo = rx_meta.tail & 0xffffffff;
+    dma_cmd.pcie_addr_hi = pcie_addr >> 32;
+    dma_cmd.pcie_addr_lo = pcie_addr & 0xffffffff;
 
     dma_cmd_wr = dma_cmd;
     __pcie_dma_enq(0, &dma_cmd_wr, queue, sig_done, &enq_sig);
@@ -82,14 +81,14 @@ void dma_send(__mem40 void* addr,
                 uint32_t len,
                 uint64_t pcie_addr)
 {
-    dma_op(addr, len, pcie_addr, NFP_PCIE_DMA_TOPCI_HIGH);
+    dma_op(addr, len, pcie_addr, NFP_PCIE_DMA_TOPCI_HI);
 }
 
 void dma_recv(__mem40 void* addr,
                 uint32_t len,
                 uint64_t pcie_addr)
 {
-    dma_op(addr, len, pcie_addr, NFP_PCIE_DMA_FROMPCI_HIGH);
+    dma_op(addr, len, pcie_addr, NFP_PCIE_DMA_FROMPCI_HI);
 }
 
 void dma_packet_send(struct pkt_t* pkt, uint64_t pcie_addr)

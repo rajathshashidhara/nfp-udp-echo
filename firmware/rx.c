@@ -14,10 +14,11 @@ enum
     DROP
 };
 
-__declspec(export cls) volatile struct device_meta_t cfg = {
-    .start_signal = 0
-};
-__declspec(lmem) uint32_t buffer_capacity, packet_size;
+__declspec(export cls) volatile struct device_meta_t cfg = { 0 };
+__lmem uint32_t buffer_capacity, packet_size;
+
+__volatile __shared __emem uint32_t debug[4096 * 64];
+__volatile __shared __emem uint32_t debug_idx;
 
 __mem40 void* receive_packet(struct pkt_t* pkt)
 {
@@ -25,7 +26,7 @@ __mem40 void* receive_packet(struct pkt_t* pkt)
     int island, pnum;
     int pkt_off;
 
-    pkt_nbi_recv(&nbi_meta, sizeof(struct nbi_meta_catamaram));
+    pkt_nbi_recv(&nbi_meta, sizeof(struct nbi_meta_catamaran));
     pkt->nbi_meta = nbi_meta;
 
     pkt_off = PKT_NBI_OFFSET;
@@ -86,14 +87,15 @@ int filter_packets(struct pkt_t* pkt)
 
 void modify_packet_header(struct pkt_t* pkt)
 {
-    /* Swap IP address */
     struct eth_addr temp_eth_addr;
+    uint32_t temp_ip_addr;
+
+    /* Swap IP address */
     temp_eth_addr = pkt->hdr.eth.dst;
     pkt->hdr.eth.dst = pkt->hdr.eth.src;
     pkt->hdr.eth.src = temp_eth_addr;
 
     /* Swap IP address */
-    uint32_t temp_ip_addr;
     temp_ip_addr = pkt->hdr.ip.dst;
     pkt->hdr.ip.dst = pkt->hdr.ip.src;
     pkt->hdr.ip.src = temp_ip_addr;
@@ -107,11 +109,12 @@ void free_packet(struct pkt_t* pkt)
 
 void drop_packet(struct pkt_t* pkt)
 {
+    __gpr struct pkt_ms_info msi = {0,0};
+
     /* Free allocated buffers */
     free_packet(pkt);
 
     /* Drop packet at the sequencer */
-    __gpr struct pkt_ms_info msi = {0,0};
     pkt_nbi_drop_seq(pkt->nbi_meta.pkt_info.isl,
                     pkt->nbi_meta.pkt_info.pnum,
                     &msi,
@@ -177,7 +180,7 @@ void rx_process(void)
 
     // 7. DMA the packet to host memory
     pcie_addr = cfg.rx_buffer_iova + tail;
-    dma_send(pkt_data + 2 * MAC_PREPEND_BYTES,
+    dma_send((char*) pkt_data + 2 * MAC_PREPEND_BYTES,
                 packet_size, pcie_addr);
 
     // 8. Update RingBuffer
@@ -189,6 +192,8 @@ void rx_process(void)
 
 int main(void)
 {
+    volatile uint64_t start;
+
     /* Restrict to single context */
     if (ctx() != 0)
     {
@@ -196,7 +201,6 @@ int main(void)
     }
 
     /* Wait for start signal to load configuration paramters */
-    volatile uint64_t start;
     while (1)
     {
         start = cfg.start_signal;

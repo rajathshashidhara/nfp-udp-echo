@@ -8,12 +8,6 @@
 #include <net/ip.h>
 #include <net/udp.h>
 
-struct pkt_t
-{
-    struct nbi_meta_catamaram nbi_meta;
-    struct pkt_hdr_t hdr;
-};
-
 __packed struct pkt_hdr_t
 {
     struct
@@ -24,6 +18,13 @@ __packed struct pkt_hdr_t
     struct eth_hdr eth;
     struct ip4_hdr ip;
     struct udp_hdr udp;
+    uint8_t pad[2];
+};
+
+struct pkt_t
+{
+    struct nbi_meta_catamaran nbi_meta;
+    struct pkt_hdr_t hdr;
 };
 
 #endif /* ME_TYPES_H_ */

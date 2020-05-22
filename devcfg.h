@@ -3,7 +3,12 @@
 
 #include <stdint.h>
 
-struct device_meta_t
+#if defined(__NFP_LANG_MICROC)
+#include <nfp.h>
+__packed struct device_meta_t
+#else
+struct __attribute__((packed)) device_meta_t
+#endif
 {
     /* Configuration */
     uint64_t rx_buffer_iova;
@@ -17,6 +22,6 @@ struct device_meta_t
     uint32_t rx_tail;
     uint32_t tx_head;
     uint32_t tx_tail;
-} __attribute__((__packed__));
+};
 
 #endif /* UDP_ECHO_CFG_H */
