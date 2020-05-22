@@ -15,7 +15,7 @@ enum
 };
 
 __declspec(export cls) volatile struct device_meta_t cfg = { 0 };
-__lmem uint32_t buffer_capacity, packet_size;
+__shared __lmem uint32_t buffer_capacity, packet_size;
 
 __volatile __shared __emem uint32_t debug[4096 * 64];
 __volatile __shared __emem uint32_t debug_idx;
