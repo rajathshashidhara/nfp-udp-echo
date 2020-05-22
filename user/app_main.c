@@ -8,6 +8,7 @@
 #include <fcntl.h>
 #include <unistd.h>
 
+#include "devcfg.h"
 #include "config.h"
 #include "memzone.h"
 #include "driver.h"
@@ -22,22 +23,6 @@ static const struct memzone  *buffer_rx, *buffer_tx;
 static struct ringbuffer_t ring_rx, ring_tx;
 
 #define SYMBOL_DEVICE_META "_dev_meta"
-
-struct device_meta_t
-{
-    /* Configuration */
-    uint64_t rx_buffer_iova;
-    uint64_t tx_buffer_iova;
-    uint32_t buffer_size;
-    uint32_t packet_size;
-    uint64_t start_signal;
-
-    /* RX/TX ring buffers */
-    uint32_t rx_head;
-    uint32_t rx_tail;
-    uint32_t tx_head;
-    uint32_t tx_tail;
-} __attribute__((__packed__));
 
 void* log_main(void* _ptr)
 {

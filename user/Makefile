@@ -4,7 +4,8 @@ DRIVERDIR := $(DIR)/lib
 
 CFLAGS := -I$(DIR)\
 			-I$(NFPCOREDIR)\
-			-I$(DRIVERDIR)
+			-I$(DRIVERDIR)\
+			-I$(DIR)/..
 
 SRCS-MAIN := app_main.c
 OBJS-MAIN := $(SRCS-MAIN:.c=.o)
