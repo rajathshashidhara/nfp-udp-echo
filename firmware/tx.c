@@ -115,7 +115,7 @@ void tx_process(void)
 
     // 3. DMA packet data to CTM buffer
     pcie_addr = cfg.tx_buffer_iova + head;
-    dma_recv((char*) pkt_data + MAC_PREPEND_BYTES, packet_size, pcie_addr);
+    dma_packet_recv(&pkt, packet_size, pcie_addr);
     pkt.nbi_meta.pkt_info.len = packet_size + MAC_PREPEND_BYTES;
 
     // 4. Update RingBuffer

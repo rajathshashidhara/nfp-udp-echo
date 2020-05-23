@@ -226,8 +226,7 @@ void rx_process(void)
 
     // 7. DMA the packet to host memory
     pcie_addr = cfg.rx_buffer_iova + tail;
-    dma_send((char*) pkt_data + 2 * MAC_PREPEND_BYTES,
-                packet_size, pcie_addr);
+    dma_packet_send(&pkt, pcie_addr);
 
     // 8. Update RingBuffer
     cfg.rx_tail = updated_tail;
