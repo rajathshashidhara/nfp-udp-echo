@@ -21,7 +21,7 @@ __packed struct pkt_hdr_t
     uint8_t pad[2];
 };
 
-struct pkt_t
+__packed struct pkt_t
 {
     struct nbi_meta_catamaran nbi_meta;
     struct pkt_hdr_t hdr;

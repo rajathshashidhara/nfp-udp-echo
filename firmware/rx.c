@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <nfp.h>
 #include <nfp/mem_bulk.h>
+#include <nfp6000/nfp_me.h>
 #include <blm.h>
 
 #include "devcfg.h"
@@ -20,11 +21,49 @@ __shared __lmem uint32_t buffer_capacity, packet_size;
 __volatile __shared __emem uint32_t debug[4096 * 64];
 __volatile __shared __emem uint32_t debug_idx;
 
+__intrinsic __pkt_recv_with_hdrs(__xread void* pkt_xfer)
+{
+    unsigned int addr = (PKT_NBI_OFFSET >> 2);
+    unsigned int count = (sizeof(struct pkt_t) >> 2);
+    SIGNAL add_thread_sig;
+    struct nfp_mecsr_prev_alu ind;
+
+    ctassert(__is_ct_const(sizeof(struct pkt_t)));
+    ctassert(sizeof(struct pkt_t) % 4 == 0);
+
+    ind.__raw = 0;
+    ind.ov_len = 1;
+    ind.length = count - 1;
+
+    __asm alu[--, --, B, ind.__raw];
+    __asm mem[packet_add_thread, *pkt_xfer, addr, 0, __ct_const_val(count)], ctx_swap[*add_thread_sig], indirect_ref;
+}
+
+__mem40 void* receive_packet_with_hdrs(struct pkt_t* pkt)
+{
+    __xread struct pkt_t _xfer_pkt;
+    int island, pnum, pkt_off;
+
+/**
+ * pkt_nbi_recv_with_hdrs(&_xfer_pkt, sizeof(struct pkt_t), PKT_NBI_OFFSET);
+ *
+ * API currently does not support count > 8.
+ * Use indirect addressing to issue command
+ */
+    __pkt_recv_with_hdrs(&_xfer_pkt);
+    *pkt = _xfer_pkt;
+
+    pkt_off = PKT_NBI_OFFSET;
+    island = pkt->nbi_meta.pkt_info.isl;
+    pnum = pkt->nbi_meta.pkt_info.pnum;
+
+    return pkt_ctm_ptr40(island, pnum, pkt_off);
+}
+
 __mem40 void* receive_packet(struct pkt_t* pkt)
 {
     __xread struct nbi_meta_catamaran nbi_meta;
-    int island, pnum;
-    int pkt_off;
+    int island, pnum, pkt_off;
 
     pkt_nbi_recv(&nbi_meta, sizeof(struct nbi_meta_catamaran));
     pkt->nbi_meta = nbi_meta;
@@ -134,11 +173,18 @@ void rx_process(void)
     uint32_t tail, updated_tail;
     uint64_t pcie_addr;
 
+/*
+
     // 1. Receive packet from NBI
     pkt_data = receive_packet(&pkt);
     
     // 2. Read packet header from CTM
     read_packet_header(&pkt);
+
+*/
+    // 1. Receive packet from NBI
+    // 2. Read packet header from CTM
+    pkt_data = receive_packet_with_hdrs(&pkt);
 
     // 3. Filter packets based on header
     switch (filter_packets(&pkt))
