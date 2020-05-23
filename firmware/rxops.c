@@ -102,12 +102,19 @@ void write_packet_header(struct pkt_t* pkt)
 int filter_packets(struct pkt_t* pkt)
 {
     /* Drop non-IP packets */
-    if (pkt->hdr.eth.type != 0x0800)
+    if (pkt->hdr.eth.type != NET_ETH_TYPE_IPV4)
         return DROP;
 
-    /* Drop non-UDP packets */
-    if (pkt->hdr.ip.proto != 0x11)
-        return DROP;
+    /* Drop non-UDP/ICMP packets */
+    switch (pkt->hdr.ip.proto)
+    {
+        case NET_IP_PROTO_UDP:
+        case NET_IP_PROTO_ICMP:
+            break;
+
+        default:
+            return DROP;
+    }
 
     /* Drop packets with illegal pkt length */
     if ((pkt->nbi_meta.pkt_info.len - 2 * MAC_PREPEND_BYTES) != packet_size)
@@ -121,7 +128,7 @@ void modify_packet_header(struct pkt_t* pkt)
     struct eth_addr temp_eth_addr;
     uint32_t temp_ip_addr;
 
-    /* Swap IP address */
+    /* Swap MAC address */
     temp_eth_addr = pkt->hdr.eth.dst;
     pkt->hdr.eth.dst = pkt->hdr.eth.src;
     pkt->hdr.eth.src = temp_eth_addr;
@@ -130,6 +137,13 @@ void modify_packet_header(struct pkt_t* pkt)
     temp_ip_addr = pkt->hdr.ip.dst;
     pkt->hdr.ip.dst = pkt->hdr.ip.src;
     pkt->hdr.ip.src = temp_ip_addr;
+
+    /* Modify ICMP header */
+    if (pkt->hdr.ip.proto == NET_IP_PROTO_ICMP)
+    {
+        // Set ICMP type as ECHO_REPLY
+        pkt->hdr.icmp.type = NET_ICMP_TYPE_ECHO_REPLY;
+    }
 }
 
 void free_packet(struct pkt_t* pkt)

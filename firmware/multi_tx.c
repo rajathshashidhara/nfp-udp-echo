@@ -1,5 +1,6 @@
 #include <stdint.h>
 #include <nfp.h>
+#include <nfp/me.h>
 
 #include "txops.h"
 #include "devcfg.h"

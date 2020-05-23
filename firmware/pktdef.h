@@ -7,6 +7,7 @@
 #include <net/eth.h>
 #include <net/ip.h>
 #include <net/udp.h>
+#include <net/icmp.h>
 
 __packed struct pkt_hdr_t
 {
@@ -17,7 +18,11 @@ __packed struct pkt_hdr_t
     };
     struct eth_hdr eth;
     struct ip4_hdr ip;
-    struct udp_hdr udp;
+    union
+    {
+        struct udp_hdr udp;
+        struct icmp_hdr icmp;
+    }
     uint8_t pad[2];
 };
 
