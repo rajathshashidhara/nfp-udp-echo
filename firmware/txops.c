@@ -8,11 +8,6 @@
 #include "dma.h"
 
 extern __shared __lmem uint32_t buffer_capacity, packet_size;
-
-/* CTM credit defines */
-#define MAX_ME_CTM_PKT_CREDITS  256
-#define MAX_ME_CTM_BUF_CREDITS  32
-
 extern __export __shared __cls struct ctm_pkt_credits ctm_credits;
 
 __mem40 void* allocate_packet(struct pkt_t* pkt)

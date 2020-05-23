@@ -12,6 +12,9 @@ __shared __lmem uint32_t buffer_capacity, packet_size;
 __volatile __shared __emem uint32_t debug[4096 * 64];
 __volatile __shared __emem uint32_t debug_idx;
 
+__volatile __shared __lmem uint32_t shadow_tail = 0;
+__volatile __shared __lmem uint8_t init = 0;
+
 void rx_process(void)
 {
     struct pkt_t pkt;
@@ -55,27 +58,39 @@ void rx_process(void)
     write_packet_header(&pkt);
 
     // 6. Wait until RX ring is empty
-    tail = cfg.rx_tail;
-    updated_tail = tail + packet_size;
-    if (updated_tail >= buffer_capacity)
-        updated_tail = 0;
-
     while (1)
     {
+        // Access from CLS. Thread will be swapped out!
         head = cfg.rx_head;
-        
+
+        // Access from local memory. No swapping
+        tail = shadow_tail;
+        updated_tail = tail + packet_size;
+        if (updated_tail >= buffer_capacity)
+            updated_tail = 0;
+
         /* Buffer full */
         if (updated_tail == head)
             continue;
 
         break;
     }
+    shadow_tail = updated_tail;
 
     // 7. DMA the packet to host memory
     pcie_addr = cfg.rx_buffer_iova + tail;
     dma_packet_send(&pkt, pcie_addr);
 
     // 8. Update RingBuffer
+    while (1)
+    {
+        // Access from CLS. Thread will be swapped out!
+        if (cfg.rx_tail != tail)
+            continue;
+
+        break;
+    }
+    // Access to CLS is in-order. No need for atomic update
     cfg.rx_tail = updated_tail;
 
     // 9. Free packet
@@ -86,12 +101,6 @@ int main(void)
 {
     volatile uint64_t start;
 
-    /* Restrict to single context */
-    if (ctx() != 0)
-    {
-        return 0;
-    }
-
     /* Wait for start signal to load configuration paramters */
     while (1)
     {
@@ -101,9 +110,23 @@ int main(void)
             break;
     }
 
-    buffer_capacity = cfg.buffer_size;
-    packet_size = cfg.packet_size;
+    /* Initialize configuration */
+    if (ctx() == 0)
+    {
+        buffer_capacity = cfg.buffer_size;
+        packet_size = cfg.packet_size;
+        init = 1;
+    }
+    else
+    {
+        while (1)
+        {
+            if (init)
+                break;
 
+            ctx_swap();
+        }
+    }
 
     while (1)
     {

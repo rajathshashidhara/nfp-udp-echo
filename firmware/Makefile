@@ -42,7 +42,6 @@ $(eval $(call microcode.add_flags,blm_obj,-I$(microc_blocks_dir)/blm))
 $(eval $(call microcode.add_flags,blm_obj,-I$(microc_blocks_dir)/blm/_h))
 $(eval $(call microcode.add_flags,blm_obj,-I$(microc_blocks_dir)/blm/_uc))
 
-
 #
 # RX Application definition
 #
@@ -68,13 +67,46 @@ $(eval $(call micro_c.add_src_lib,tx_obj,libblm,$(microc_blocks_dir)/blm))
 $(eval $(call micro_c.force_include,tx_obj,config))
 
 #
-# Application definition
+# MultiRX Application definition
 #
-$(eval $(call fw.add_obj,app,rx_obj,i32.me0))
-$(eval $(call fw.add_obj,app,tx_obj,i32.me1))
-$(eval $(call fw.add_obj,app,blm_obj,i48.me0))
-$(eval $(call fw.link_with_rtsyms,app))
-$(eval $(call fw.add_ppc,app,i8,$(PICO_CODE)))
+$(eval $(call micro_c.compile_with_rtl,mrx_obj,multi_rx.c))
+$(eval $(call micro_c.add_src_lib,mrx_obj,dma))
+$(eval $(call micro_c.add_src_lib,mrx_obj,rxops))
+$(eval $(call micro_c.add_fw_libs,mrx_obj,nfp pkt std net))
+$(eval $(call micro_c.add_flags,mrx_obj,-I$(ROOT_SRC_DIR)))
+$(eval $(call micro_c.add_flags,mrx_obj,-I$(microc_blocks_dir)/blm))
+$(eval $(call micro_c.add_src_lib,mrx_obj,libblm,$(microc_blocks_dir)/blm))
+$(eval $(call micro_c.force_include,mrx_obj,config))
+
+#
+# MultiTX Application definition
+#
+$(eval $(call micro_c.compile_with_rtl,mtx_obj,multi_tx.c))
+$(eval $(call micro_c.add_src_lib,mtx_obj,dma))
+$(eval $(call micro_c.add_src_lib,mtx_obj,txops))
+$(eval $(call micro_c.add_fw_libs,mtx_obj,nfp pkt std net))
+$(eval $(call micro_c.add_flags,mtx_obj,-I$(ROOT_SRC_DIR)))
+$(eval $(call micro_c.add_flags,mtx_obj,-I$(microc_blocks_dir)/blm))
+$(eval $(call micro_c.add_src_lib,mtx_obj,libblm,$(microc_blocks_dir)/blm))
+$(eval $(call micro_c.force_include,mtx_obj,config))
+
+#
+# Single-Context Application definition
+#
+$(eval $(call fw.add_obj,app_sc,rx_obj,i32.me0))
+$(eval $(call fw.add_obj,app_sc,tx_obj,i32.me1))
+$(eval $(call fw.add_obj,app_sc,blm_obj,i48.me0))
+$(eval $(call fw.link_with_rtsyms,app_sc))
+$(eval $(call fw.add_ppc,app_sc,i8,$(PICO_CODE)))
+
+#
+# Multi-Context Application definition
+#
+$(eval $(call fw.add_obj,app_mc,mrx_obj,i32.me0))
+$(eval $(call fw.add_obj,app_mc,mtx_obj,i32.me1))
+$(eval $(call fw.add_obj,app_mc,blm_obj,i48.me0))
+$(eval $(call fw.link_with_rtsyms,app_mc))
+$(eval $(call fw.add_ppc,app_mc,i8,$(PICO_CODE)))
 
 #
 # Debug
