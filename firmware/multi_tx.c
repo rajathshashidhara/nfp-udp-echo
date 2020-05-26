@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <nfp.h>
 #include <nfp/me.h>
+#include <nfp/mem_atomic.h>
 
 #include "txops.h"
 #include "devcfg.h"
@@ -9,6 +10,10 @@
 
 __declspec(export cls) volatile struct device_meta_t cfg = { 0 };
 __shared __lmem uint32_t buffer_capacity, packet_size;
+
+#ifdef PKT_STATS
+__declspec(export cls) uint64_t tx_counters[8];
+#endif
 
 __volatile __shared __lmem uint32_t shadow_head = 0;
 __volatile __shared __lmem uint8_t init = 0;
@@ -69,25 +74,28 @@ void tx_process(void)
 
     // 5. Send packet over NBI
     send_packet(&pkt);
+
+    mem_incr64(&tx_counters[ctx()]);
 }
 
 int main(void)
 {
     volatile uint64_t start;
 
-    /* Wait for start signal to load configuration paramters */
-    while (1)
-    {
-        start = cfg.start_signal;
-
-        if (start)
-            break;
-    }
-
     /* Initialize configuration */
     if (ctx() == 0)
     {
         pkt_ctm_init_credits(&ctm_credits, MAX_ME_CTM_PKT_CREDITS, MAX_ME_CTM_BUF_CREDITS);
+
+        /* Wait for start signal to load configuration paramters */
+        while (1)
+        {
+            start = cfg.start_signal;
+
+            if (start)
+                break;
+        }
+
         buffer_capacity = cfg.buffer_size;
         packet_size = cfg.packet_size;
         init = 1;
@@ -106,6 +114,10 @@ int main(void)
     while (1)
     {
         tx_process();
+
+#ifdef PKT_STATS
+        mem_incr64(&tx_counters[ctx()]);
+#endif
     }
 
     return 0;

@@ -22,7 +22,9 @@ extern int nfp_cpp_dev_main(struct rte_pci_device* dev, struct nfp_cpp* cpp);
 static const struct memzone  *buffer_rx, *buffer_tx;
 static struct ringbuffer_t ring_rx, ring_tx;
 
-#define SYMBOL_DEVICE_META "_dev_meta"
+#define SYMBOL_DEVICE_META  "i32._cfg"
+#define SYMBOL_RX_STATS     "i32._rx_counters"
+#define SYMBOL_TX_STATS     "i32._tx_counters"
 
 void* log_main(void* _ptr)
 {
@@ -50,6 +52,52 @@ void* log_main(void* _ptr)
         }
 
         sleep(1);
+    }
+
+    return NULL;
+}
+
+void* stats_main(void* arg)
+{
+    struct nfp_cpp* cpp = (struct nfp_cpp*) arg;
+    struct nfp_rtsym_table* symbol_table = nfp_rtsym_table_read(cpp);
+    struct nfp_cpp_area* rx_counters_area = (struct nfp_cpp_area*) malloc(sizeof(struct nfp_cpp_area));
+    struct nfp_cpp_area* tx_counters_area = (struct nfp_cpp_area*) malloc(sizeof(struct nfp_cpp_area));
+
+    uint64_t* rx_counters = (uint64_t*) nfp_rtsym_map(
+                                            symbol_table,
+                                            SYMBOL_DEVICE_META,
+                                            8 * sizeof(uint64_t),
+                                    &rx_counters_area);
+    uint64_t* tx_counters = (uint64_t*) nfp_rtsym_map(
+                                            symbol_table,
+                                            SYMBOL_DEVICE_META,
+                                            8 * sizeof(uint64_t),
+                                            &tx_counters_area);
+
+    while (1)
+    {
+        sleep(1);
+
+        fprintf(stderr, "[RX] %lu %lu %lu %lu %lu %lu %lu %lu",
+                    rx_counters[0],
+                    rx_counters[1],
+                    rx_counters[2],
+                    rx_counters[3],
+                    rx_counters[4],
+                    rx_counters[5],
+                    rx_counters[6],
+                    rx_counters[7]);
+
+        fprintf(stderr, "[TX] %lu %lu %lu %lu %lu %lu %lu %lu",
+            tx_counters[0],
+            tx_counters[1],
+            tx_counters[2],
+            tx_counters[3],
+            tx_counters[4],
+            tx_counters[5],
+            tx_counters[6],
+            tx_counters[7]);
     }
 
     return NULL;
@@ -158,10 +206,18 @@ int main(int argc, char* argv[])
     pthread_create(&log_thread, NULL, log_main, NULL);
     pthread_create(&worker_thread, NULL, udp_worker, (void*) cpp);
 
+#ifdef PKT_STATS
+    pthread_t stats_thread;
+    pthread_create(&stats_thread, NULL, stats_main, (void*) cpp);
+#endif
+
     nfp_cpp_dev_main(dev, cpp);
     
     pthread_join(worker_thread, NULL);
     pthread_join(log_thread, NULL);
+#ifdef PKT_STATS
+    pthread_join(stats_thread, NULL);
+#endif
 
     return 0;
 }

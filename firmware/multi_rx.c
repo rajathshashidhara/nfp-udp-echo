@@ -1,6 +1,7 @@
 #include <stdint.h>
 #include <nfp.h>
 #include <nfp/me.h>
+#include <nfp/mem_atomic.h>
 
 #include "rxops.h"
 #include "devcfg.h"
@@ -9,6 +10,10 @@
 
 __declspec(export cls) volatile struct device_meta_t cfg = { 0 };
 __shared __lmem uint32_t buffer_capacity, packet_size;
+
+#ifdef PKT_STATS
+__declspec(export cls) uint64_t rx_counters[8];
+#endif
 
 __volatile __shared __emem uint32_t debug[4096 * 64];
 __volatile __shared __emem uint32_t debug_idx;
@@ -102,18 +107,18 @@ int main(void)
 {
     volatile uint64_t start;
 
-    /* Wait for start signal to load configuration paramters */
-    while (1)
-    {
-        start = cfg.start_signal;
-
-        if (start)
-            break;
-    }
-
     /* Initialize configuration */
     if (ctx() == 0)
     {
+        /* Wait for start signal to load configuration paramters */
+        while (1)
+        {
+            start = cfg.start_signal;
+
+            if (start)
+                break;
+        }
+
         buffer_capacity = cfg.buffer_size;
         packet_size = cfg.packet_size;
         init = 1;
@@ -132,6 +137,10 @@ int main(void)
     while (1)
     {
         rx_process();
+
+#ifdef PKT_STATS
+        mem_incr64(&rx_counters[ctx()]);
+#endif
     }
 
     return 0;
