@@ -22,7 +22,7 @@ __packed struct pkt_hdr_t
     {
         struct udp_hdr udp;
         struct icmp_hdr icmp;
-    }
+    };
     uint8_t pad[2];
 };
 

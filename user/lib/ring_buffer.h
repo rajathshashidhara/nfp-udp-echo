@@ -50,7 +50,7 @@ static inline void* ringbuffer_back(struct ringbuffer_t* rb)
 static void ringbuffer_push(struct ringbuffer_t* rb)
 {
     /* Crash if buffer is full! */
-    assert(ringbuffer_full(rb));
+    assert(!ringbuffer_full(rb));
 
     rte_wmb();  /* Ensure data is copied before updating pointer! */
     
@@ -62,7 +62,7 @@ static void ringbuffer_push(struct ringbuffer_t* rb)
 static void ringbuffer_pop(struct ringbuffer_t* rb)
 {
     /* Crash if buffer is empty! */
-    assert(ringbuffer_empty(rb));
+    assert(!ringbuffer_empty(rb));
 
     rte_wmb();  /* Ensure data is copied before updating pointer! */
 
