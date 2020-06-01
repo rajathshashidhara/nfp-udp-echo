@@ -12,7 +12,7 @@ __declspec(export cls) volatile struct device_meta_t cfg = { 0 };
 __shared __lmem uint32_t buffer_capacity, packet_size;
 
 #ifdef PKT_STATS
-__declspec(export cls) uint64_t tx_counters[8];
+__declspec(export imem) uint64_t tx_counters[8];
 #endif
 
 __volatile __shared __lmem uint32_t shadow_head = 0;
@@ -74,8 +74,6 @@ void tx_process(void)
 
     // 5. Send packet over NBI
     send_packet(&pkt);
-
-    mem_incr64(&tx_counters[ctx()]);
 }
 
 int main(void)

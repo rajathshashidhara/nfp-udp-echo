@@ -23,8 +23,8 @@ static const struct memzone  *buffer_rx, *buffer_tx;
 static struct ringbuffer_t ring_rx, ring_tx;
 
 #define SYMBOL_DEVICE_META  "i32._cfg"
-#define SYMBOL_RX_STATS     "i32._rx_counters"
-#define SYMBOL_TX_STATS     "i32._tx_counters"
+#define SYMBOL_RX_STATS     "_rx_counters"
+#define SYMBOL_TX_STATS     "_tx_counters"
 
 void* log_main(void* _ptr)
 {
@@ -66,12 +66,12 @@ void* stats_main(void* arg)
 
     uint64_t* rx_counters = (uint64_t*) nfp_rtsym_map(
                                             symbol_table,
-                                            SYMBOL_DEVICE_META,
+                                            SYMBOL_RX_STATS,
                                             8 * sizeof(uint64_t),
                                     &rx_counters_area);
     uint64_t* tx_counters = (uint64_t*) nfp_rtsym_map(
                                             symbol_table,
-                                            SYMBOL_DEVICE_META,
+                                            SYMBOL_TX_STATS,
                                             8 * sizeof(uint64_t),
                                             &tx_counters_area);
 
@@ -79,7 +79,7 @@ void* stats_main(void* arg)
     {
         sleep(1);
 
-        fprintf(stderr, "[RX] %lu %lu %lu %lu %lu %lu %lu %lu",
+        fprintf(stderr, "[RX] %lu %lu %lu %lu %lu %lu %lu %lu\n",
                     rx_counters[0],
                     rx_counters[1],
                     rx_counters[2],
@@ -89,7 +89,7 @@ void* stats_main(void* arg)
                     rx_counters[6],
                     rx_counters[7]);
 
-        fprintf(stderr, "[TX] %lu %lu %lu %lu %lu %lu %lu %lu",
+        fprintf(stderr, "[TX] %lu %lu %lu %lu %lu %lu %lu %lu\n",
             tx_counters[0],
             tx_counters[1],
             tx_counters[2],

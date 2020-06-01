@@ -12,7 +12,7 @@ __declspec(export cls) volatile struct device_meta_t cfg = { 0 };
 __shared __lmem uint32_t buffer_capacity, packet_size;
 
 #ifdef PKT_STATS
-__declspec(export cls) uint64_t rx_counters[8];
+__declspec(export imem) uint64_t rx_counters[8];
 #endif
 
 __volatile __shared __emem uint32_t debug[4096 * 64];

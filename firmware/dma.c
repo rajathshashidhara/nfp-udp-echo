@@ -73,7 +73,7 @@ __intrinsic static void dma_op(__mem40 void* addr,
         (uint32_t) (((uint64_t) addr) & 0xFFFFFFFF));
 
     dma_cmd.pcie_addr_hi = pcie_addr >> 32;
-    dma_cmd.pcie_addr_lo = pcie_addr & 0xffffffff;
+    dma_cmd.pcie_addr_lo = pcie_addr & 0xFFFFFFFF;
 
     dma_cmd_wr = dma_cmd;
     __pcie_dma_enq(0, &dma_cmd_wr, queue, sig_done, &sig_pair->odd);
