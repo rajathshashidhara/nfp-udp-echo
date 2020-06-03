@@ -63,7 +63,7 @@ void rx_process(void)
     while (1)
     {
         head = cfg.rx_head;
-        
+
         /* Buffer full */
         if (updated_tail == head)
             continue;
