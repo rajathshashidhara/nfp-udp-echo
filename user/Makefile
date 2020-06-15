@@ -7,33 +7,41 @@ CFLAGS := -I$(DIR)\
 			-I$(DRIVERDIR)\
 			-I$(DIR)/..
 
-SRCS-MAIN := app_main.c
-OBJS-MAIN := $(SRCS-MAIN:.c=.o)
-DEPS-MAIN := $(SRCS-MAIN:.c=.d)
+SRCS-SP := slowpath_main.c
+OBJS-SP := $(SRCS-SP:.c=.o)
+DEPS-SP := $(SRCS-SP:.c=.d)
 
+SRCS-APP := app_main.c
+OBJS-APP := $(SRCS-APP:.c=.o)
+DEPS-APP := $(SRCS-APP:.c=.d)
+
+SLOWPATH := slowpath-nfp.out
 APP := nfp-user.out
 
-all: $(APP)
+all: $(SLOWPATH) $(APP)
 
 CFLAGS += -g3 -Wall -Werror -Wno-format-truncation -pthread -MD -MP
 LDFLAGS := -L$(NFPCOREDIR) -L$(DRIVERDIR)
 LDLIBS := -ldriver -lnfpcore -lm -pthread
 
-$(LIBSDIR)
+DEPS := $(DEPS-SP) $(DEPS-APP)
+OBJS := $(OBJS-SP) $(OBJS-APP)
 
-DEPS := $(DEPS-MAIN)
-OBJS := $(OBJS-MAIN)
-
-$(APP): $(OBJS)
+$(SLOWPATH): $(OBJS-SP)
 	$(MAKE) -C nfpcore
 	$(MAKE) -C lib
-	$(CC) $(LDFLAGS) -o $(APP) $(OBJS) $(LDLIBS)
+	$(CC) $(LDFLAGS) -o $(SLOWPATH) $(OBJS-SP) $(LDLIBS)
+
+$(APP): $(OBJS-APP)
+	$(MAKE) -C lib
+	$(CC) $(LDFLAGS) -o $(APP) $(OBJS-APP) $(LDLIBS)
 
 clean:
 	$(MAKE) -C nfpcore clean
 	$(MAKE) -C lib clean
-	rm -rf $(DEPS) $(OBJS) $(APP) $(LIBS)
+	rm -rf $(DEPS) $(OBJS) $(APP) $(SLOWPATH) $(LIBS)
 
--include $(DEPS-MAIN)
+-include $(DEPS-SP)
+-include $(DEPS-APP)
 
 .PHONY: all clean

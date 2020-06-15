@@ -1,146 +1,107 @@
 #include <stdio.h>
-#include <stdlib.h>
 #include <string.h>
-#include <pthread.h>
 
 #include <sys/types.h>
-#include <sys/stat.h>
-#include <fcntl.h>
+#include <sys/mman.h>
 #include <unistd.h>
+#include <fcntl.h>
+#include <linux/limits.h>
 
-#include "devcfg.h"
-#include "config.h"
-#include "memzone.h"
-#include "driver.h"
-#include "ring_buffer.h"
+#include "rte_pci.h"
 #include "io.h"
-#include "nfp_cpp.h"
-#include "nfp_rtsym.h"
+#include "config.h"
+#include "devcfg.h"
+#include "ring_buffer.h"
 
-extern int nfp_cpp_dev_main(struct rte_pci_device* dev, struct nfp_cpp* cpp);
-
-static const struct memzone  *buffer_rx, *buffer_tx;
 static struct ringbuffer_t ring_rx, ring_tx;
+static void *buffer_rx, *buffer_tx;
+static struct device_meta_t* meta;
 
-#define SYMBOL_DEVICE_META  "i32._cfg"
-#define SYMBOL_RX_STATS     "_rx_counters"
-#define SYMBOL_TX_STATS     "_tx_counters"
-
-void* log_main(void* _ptr)
+int map_resources(struct rte_pci_addr dev_addr, int resource_idx, off_t offset_cfg)
 {
-    (void) _ptr;
     int fd;
+    char devname[PATH_MAX];
 
-    if ((fd = open("buffer_log_rx", O_CREAT | O_RDWR, 0666)) < 0)
+    snprintf(devname, sizeof(devname),
+        "%s/" PCI_PRI_FMT "/resource%d",
+        "/sys/bus/pci/devices",
+        dev_addr.domain, dev_addr.bus, dev_addr.devid,
+        dev_addr.function, resource_idx);
+    fd = open(devname, O_RDWR);
+    if (fd < 0)
     {
-        perror("open failed");
-        return NULL;
+        fprintf(stderr, "Cannot open %s: %s\n",
+            devname, strerror(errno));
+        return -1;
     }
-
-    if ((ftruncate(fd, RING_BUFFER_SIZE)) < 0)
+    meta = (struct device_meta_t*)
+                            mmap(NULL,
+                                sizeof(struct device_meta_t),
+                                PROT_READ | PROT_WRITE,
+                                MAP_SHARED,
+                                fd, offset_cfg);
+    if (meta == MAP_FAILED)
     {
-        perror("trunate failed");
-        return NULL;
+        fprintf(stderr, "Cannot memory map: %s\n",
+            strerror(errno));
+        return -1;
     }
+    close(fd);
 
-    while (1)
+    snprintf(devname, sizeof(devname),
+        "/mnt/huge/memzone-%d", 0);
+    fd = open(devname, O_RDWR);
+    if (fd < 0)
     {
-        if (pwrite(fd, (void*) buffer_rx->addr, RING_BUFFER_SIZE, 0) < 0)
-        {
-            perror("write failed");
-            return NULL;
-        }
-
-        sleep(1);
+        fprintf(stderr, "Cannot open %s: %s\n",
+            devname, strerror(errno));
+        return -1;
     }
-
-    return NULL;
-}
-
-void* stats_main(void* arg)
-{
-    struct nfp_cpp* cpp = (struct nfp_cpp*) arg;
-    struct nfp_rtsym_table* symbol_table = nfp_rtsym_table_read(cpp);
-    struct nfp_cpp_area* rx_counters_area = (struct nfp_cpp_area*) malloc(sizeof(struct nfp_cpp_area));
-    struct nfp_cpp_area* tx_counters_area = (struct nfp_cpp_area*) malloc(sizeof(struct nfp_cpp_area));
-
-    uint64_t* rx_counters = (uint64_t*) nfp_rtsym_map(
-                                            symbol_table,
-                                            SYMBOL_RX_STATS,
-                                            8 * sizeof(uint64_t),
-                                    &rx_counters_area);
-    uint64_t* tx_counters = (uint64_t*) nfp_rtsym_map(
-                                            symbol_table,
-                                            SYMBOL_TX_STATS,
-                                            8 * sizeof(uint64_t),
-                                            &tx_counters_area);
-
-    while (1)
+    buffer_rx = mmap(NULL, RING_BUFFER_SIZE,
+                    PROT_READ | PROT_WRITE,
+                    MAP_SHARED | MAP_POPULATE,
+                    fd, 0);
+    if (buffer_rx == MAP_FAILED)
     {
-        sleep(1);
-
-        fprintf(stderr, "[RX] %lu %lu %lu %lu %lu %lu %lu %lu\n",
-                    rx_counters[0],
-                    rx_counters[1],
-                    rx_counters[2],
-                    rx_counters[3],
-                    rx_counters[4],
-                    rx_counters[5],
-                    rx_counters[6],
-                    rx_counters[7]);
-
-        fprintf(stderr, "[TX] %lu %lu %lu %lu %lu %lu %lu %lu\n",
-            tx_counters[0],
-            tx_counters[1],
-            tx_counters[2],
-            tx_counters[3],
-            tx_counters[4],
-            tx_counters[5],
-            tx_counters[6],
-            tx_counters[7]);
+        fprintf(stderr, "Cannot memory map: %s\n",
+            strerror(errno));
+        return -1;
     }
+    close(fd);
 
-    return NULL;
-}
+    snprintf(devname, sizeof(devname),
+        "/mnt/huge/memzone-%d", 1);
+    fd = open(devname, O_RDWR);
+    if (fd < 0)
+    {
+        fprintf(stderr, "Cannot open %s: %s\n",
+            devname, strerror(errno));
+        return -1;
+    }
+    buffer_tx = mmap(NULL, RING_BUFFER_SIZE,
+                    PROT_READ | PROT_WRITE,
+                    MAP_SHARED | MAP_POPULATE,
+                    fd, 0);
+    if (buffer_tx == MAP_FAILED)
+    {
+        fprintf(stderr, "Cannot memory map: %s\n",
+            strerror(errno));
+        return -1;
+    }
+    close(fd);
 
-void configure_device(struct device_meta_t* meta)
-{
-    meta->packet_size = UDP_PACKET_SIZE;
-    meta->buffer_size = RING_BUFFER_SIZE;
-    meta->rx_buffer_iova = buffer_rx->iova;
-    meta->tx_buffer_iova = buffer_tx->iova;
-    meta->rx_head = meta->rx_tail = 0;
-    meta->tx_head = meta->tx_tail = 0;
-
-    rte_io_wmb();   /* Flush preceding writes! */
-
-    nn_writeq(1, &meta->start_signal);
-}
-
-void* udp_worker(void* arg)
-{
-    struct nfp_cpp* cpp = (struct nfp_cpp*) arg;
-    struct nfp_rtsym_table* symbol_table = nfp_rtsym_table_read(cpp);
-    struct nfp_cpp_area* device_meta_area = (struct nfp_cpp_area*) malloc(sizeof(struct nfp_cpp_area));
-    struct device_meta_t* meta = (struct device_meta_t*)
-                                        nfp_rtsym_map(
-                                            symbol_table,
-                                            SYMBOL_DEVICE_META,
-                                            sizeof(struct device_meta_t),
-                                            &device_meta_area);
-
-    if (meta == NULL)
-        return NULL;
-
-    ring_rx.base_addr = (void*) buffer_rx->addr;
+    ring_rx.base_addr = (void*) buffer_rx;
     ring_rx.capacity = RING_BUFFER_SIZE;
     ring_rx.entry_size = UDP_PACKET_SIZE;
-    ring_tx.base_addr = (void*) buffer_tx->addr;
+    ring_tx.base_addr = (void*) buffer_tx;
     ring_tx.capacity = RING_BUFFER_SIZE;
     ring_tx.entry_size = UDP_PACKET_SIZE;
 
-    configure_device(meta);
+    return 0;
+}
 
+void udp_worker()
+{
     while (1)
     {
         ring_rx.tail = nn_readl(&meta->rx_tail);
@@ -165,59 +126,37 @@ void* udp_worker(void* arg)
             nn_writel(ring_rx.head, &meta->rx_head);
         }
     }
+}
 
-    return NULL;
+void usage()
+{
+    fprintf(stderr, "nfp-user.out [PCI-DEV-ID] [BAR-RESOURCE-IDX] [SYMBOL-OFFSET]\n");
 }
 
 int main(int argc, char* argv[])
 {
-    struct rte_pci_device* dev;
-    int ret;
-
-    memzone_init();
-
-    dev = pci_scan();
-    if (!dev)
+    if (argc < 4)
     {
-        fprintf(stderr, "Cannot find Netronome NIC\n");
+        usage();
         return 0;
     }
 
-    struct nfp_cpp* cpp;
-    ret = pci_probe(dev, &cpp);
-    if (ret)
+    struct rte_pci_addr addr;
+    sscanf(argv[1], "%u:%hhu:%hhu.%hhu", &addr.domain, &addr.bus, &addr.devid, &addr.function);
+
+    int resource_idx;
+    sscanf(argv[2], "%d", &resource_idx);
+
+    off_t meta_offset;
+    sscanf(argv[3], "%ld", &meta_offset);
+
+    if (map_resources(addr, resource_idx, meta_offset) < 0)
     {
-        fprintf(stderr, "Probe unsuccessful\n");
+        usage();
         return 0;
     }
 
-    buffer_rx = memzone_reserve(RING_BUFFER_SIZE);
-    buffer_tx = memzone_reserve(RING_BUFFER_SIZE);
-
-    memset((void*) buffer_rx->addr, 0, RING_BUFFER_SIZE);
-    memset((void*) buffer_tx->addr, 0, RING_BUFFER_SIZE);
-
-    fprintf(stderr, "BUFFER RX %u Physical: [0x%p ~ 0x%p]\n",
-            RING_BUFFER_SIZE, (char*) buffer_rx->iova, (char*) buffer_rx->iova + RING_BUFFER_SIZE);
-    fprintf(stderr, "BUFFER TX %u Physical: [0x%p ~ 0x%p]\n",
-            RING_BUFFER_SIZE, (char*) buffer_rx->iova, (char*) buffer_rx->iova + RING_BUFFER_SIZE);
-
-    pthread_t log_thread, worker_thread;
-    pthread_create(&log_thread, NULL, log_main, NULL);
-    pthread_create(&worker_thread, NULL, udp_worker, (void*) cpp);
-
-#ifdef PKT_STATS
-    pthread_t stats_thread;
-    pthread_create(&stats_thread, NULL, stats_main, (void*) cpp);
-#endif
-
-    nfp_cpp_dev_main(dev, cpp);
-    
-    pthread_join(worker_thread, NULL);
-    pthread_join(log_thread, NULL);
-#ifdef PKT_STATS
-    pthread_join(stats_thread, NULL);
-#endif
+    udp_worker();
 
     return 0;
 }

@@ -183,7 +183,7 @@ const struct memzone* memzone_reserve(size_t len)
     }
 
     addr = mmap(NULL, len, PROT_READ | PROT_WRITE,
-        MAP_PRIVATE | MAP_ANONYMOUS | MAP_POPULATE,
+        MAP_SHARED | MAP_POPULATE,
         fd, 0);
     close(fd);
     if (addr == MAP_FAILED)

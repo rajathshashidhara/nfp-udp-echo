@@ -47,28 +47,7 @@ static inline void* ringbuffer_back(struct ringbuffer_t* rb)
     return (char*) rb->base_addr + rb->tail;
 }
 
-static void ringbuffer_push(struct ringbuffer_t* rb)
-{
-    /* Crash if buffer is full! */
-    assert(!ringbuffer_full(rb));
-
-    rte_wmb();  /* Ensure data is copied before updating pointer! */
-    
-    rb->tail = rb->tail + rb->entry_size;
-    if (rb->tail >= rb->capacity)
-        rb->tail = 0;
-}
-
-static void ringbuffer_pop(struct ringbuffer_t* rb)
-{
-    /* Crash if buffer is empty! */
-    assert(!ringbuffer_empty(rb));
-
-    rte_wmb();  /* Ensure data is copied before updating pointer! */
-
-    rb->head = rb->head + rb->entry_size;
-    if (rb->head >= rb->capacity)
-        rb->head = 0;
-}
+extern void ringbuffer_push(struct ringbuffer_t* rb);
+extern void ringbuffer_pop(struct ringbuffer_t* rb);
 
 #endif /* USERSPACE_RINGBUFFER_H */
