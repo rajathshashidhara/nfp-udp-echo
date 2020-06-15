@@ -157,6 +157,7 @@ const struct memzone* memzone_reserve(size_t len)
     char filename[MEMZONE_FILENAME_LEN];
     struct memzone* mz;
     void* addr;
+    uint64_t phyaddr;
     int fd;
 
     /* This is automatically aligned to CACHE_LINE size */
@@ -194,9 +195,17 @@ const struct memzone* memzone_reserve(size_t len)
         return NULL;
     }
 
+    if ((phyaddr = mem_virt2phy(addr)) == MEMZONE_BAD_IOVA)
+    {
+        fprintf(stderr, "%s(): Unable to convert virtual address to physical address\n",
+            __func__);
+        free_memzone(mz);
+        return NULL;
+    }
+
     mz->addr = (uint64_t) addr;
     mz->len = len;
-    mz->iova = mem_virt2phy(addr);
+    mz->iova = phyaddr;
     mz->flags = 0;
 
     return mz;
