@@ -46,4 +46,23 @@ static inline void nn_writeq(uint64_t val, volatile void *addr)
 	nn_writel(val, addr);
 }
 
+static __always_inline void rep_movs(void *to, const void *from, size_t n)
+{
+	unsigned long d0, d1, d2;
+	asm volatile("rep ; movsl\n\t"
+		     "testb $2,%b4\n\t"
+		     "je 1f\n\t"
+		     "movsw\n"
+		     "1:\ttestb $1,%b4\n\t"
+		     "je 2f\n\t"
+		     "movsb\n"
+		     "2:"
+		     : "=&c" (d0), "=&D" (d1), "=&S" (d2)
+		     : "0" (n / 4), "q" (n), "1" ((long)to), "2" ((long)from)
+		     : "memory");
+}
+
+extern void memcpy_fromio_relaxed(void *to, const volatile void *from, size_t n);
+extern void memcpy_toio_relaxed(volatile void *to, const void* from, size_t n);
+
 #endif /* _USERSPACE_IO_H */

@@ -6,7 +6,8 @@ CFLAGS := -I$(DIR) \
 
 SRCS-LIBS += memzone.c \
 		driver.c \
-		ring_buffer.c
+		ring_buffer.c \
+		io.c
 
 OBJS-LIBS := $(SRCS-LIBS:.c=.o)
 DEPS-LIBS := $(SRCS-LIBS:.c=.d)

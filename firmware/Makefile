@@ -91,6 +91,16 @@ $(eval $(call micro_c.add_src_lib,mtx_obj,libblm,$(microc_blocks_dir)/blm))
 $(eval $(call micro_c.force_include,mtx_obj,config))
 
 #
+# MMIO Application definition
+#
+$(eval $(call micro_c.compile_with_rtl,mmio_obj,mmio.c))
+$(eval $(call micro_c.add_fw_libs,mmio_obj,nfp pkt std net))
+$(eval $(call micro_c.add_flags,mmio_obj,-I$(ROOT_SRC_DIR)))
+$(eval $(call micro_c.add_flags,mmio_obj,-I$(microc_blocks_dir)/blm))
+$(eval $(call micro_c.add_src_lib,mmio_obj,libblm,$(microc_blocks_dir)/blm))
+$(eval $(call micro_c.force_include,mmio_obj,config))
+
+#
 # Single-Context Application definition
 #
 $(eval $(call fw.add_obj,app_sc,rx_obj,i32.me0))
@@ -107,6 +117,14 @@ $(eval $(call fw.add_obj,app_mc,mtx_obj,i32.me1))
 $(eval $(call fw.add_obj,app_mc,blm_obj,i48.me0))
 $(eval $(call fw.link_with_rtsyms,app_mc))
 $(eval $(call fw.add_ppc,app_mc,i8,$(PICO_CODE)))
+
+#
+# MMIO Perf Application definition
+#
+$(eval $(call fw.add_obj,app_mc,mmio_obj,i32.me0))
+$(eval $(call fw.add_obj,app_mc,blm_obj,i48.me0))
+$(eval $(call fw.link_with_rtsyms,mmio_perf))
+$(eval $(call fw.add_ppc,mmio_perf,i8,$(PICO_CODE)))
 
 #
 # Debug

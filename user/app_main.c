@@ -3,167 +3,387 @@
 #include <string.h>
 #include <pthread.h>
 
+#include "getopt.h"
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <fcntl.h>
 #include <unistd.h>
+#include <x86intrin.h>
+#include <cpuid.h>
 
 #include "devcfg.h"
 #include "config.h"
 #include "memzone.h"
 #include "driver.h"
-#include "ring_buffer.h"
 #include "io.h"
 #include "nfp_cpp.h"
 #include "nfp_rtsym.h"
 
-extern int nfp_cpp_dev_main(struct rte_pci_device* dev, struct nfp_cpp* cpp);
+#define SYMBOL_CLS_BUF      "i32._cls_buffer"
+#define SYMBOL_CTM_BUF      "i32._ctm_buffer"
+#define SYMBOL_IMEM_BUF     "_imem_buffer"
+#define SYMBOL_EMEM_BUF     "_emem_buffer"
 
-static const struct memzone  *buffer_rx, *buffer_tx;
-static struct ringbuffer_t ring_rx, ring_tx;
+#define MAX_COUNT       1000000
+#define MAX_CMD_SIZE    1024
+#define MAX_THREADS     32
 
-#define SYMBOL_DEVICE_META  "i32._cfg"
-#define SYMBOL_RX_STATS     "_rx_counters"
-#define SYMBOL_TX_STATS     "_tx_counters"
+static uint64_t time_journal[MAX_COUNT];
 
-void* log_main(void* _ptr)
+unsigned start_bw_test = 0;
+unsigned end_bw_test = 0;
+
+static uint64_t tsc_frequency;
+
+static unsigned int
+rte_cpu_get_model(uint32_t fam_mod_step)
 {
-    (void) _ptr;
-    int fd;
+	uint32_t family, model, ext_model;
 
-    if ((fd = open("buffer_log_rx", O_CREAT | O_RDWR, 0666)) < 0)
+	family = (fam_mod_step >> 8) & 0xf;
+	model = (fam_mod_step >> 4) & 0xf;
+
+	if (family == 6 || family == 15) {
+		ext_model = (fam_mod_step >> 16) & 0xf;
+		model += (ext_model << 4);
+	}
+
+	return model;
+}
+
+static int32_t
+rdmsr(int msr, uint64_t *val)
+{
+	int fd;
+	int ret;
+
+	fd = open("/dev/cpu/0/msr", O_RDONLY);
+	if (fd < 0)
+		return fd;
+
+	ret = pread(fd, val, sizeof(uint64_t), msr);
+
+	close(fd);
+
+	return ret;
+}
+
+static uint32_t
+check_model_wsm_nhm(uint8_t model)
+{
+	switch (model) {
+	/* Westmere */
+	case 0x25:
+	case 0x2C:
+	case 0x2F:
+	/* Nehalem */
+	case 0x1E:
+	case 0x1F:
+	case 0x1A:
+	case 0x2E:
+		return 1;
+	}
+
+	return 0;
+}
+
+static uint32_t
+check_model_gdm_dnv(uint8_t model)
+{
+	switch (model) {
+	/* Goldmont */
+	case 0x5C:
+	/* Denverton */
+	case 0x5F:
+		return 1;
+	}
+
+	return 0;
+}
+
+uint64_t
+get_tsc_freq_arch(void)
+{
+	uint64_t tsc_hz = 0;
+	uint32_t a, b, c, d, maxleaf;
+	uint8_t mult, model;
+	int32_t ret;
+
+	/*
+	 * Time Stamp Counter and Nominal Core Crystal Clock
+	 * Information Leaf
+	 */
+	maxleaf = __get_cpuid_max(0, NULL);
+
+	if (maxleaf >= 0x15) {
+		__cpuid(0x15, a, b, c, d);
+
+		/* EBX : TSC/Crystal ratio, ECX : Crystal Hz */
+		if (b && c)
+			return c * (b / a);
+	}
+
+	__cpuid(0x1, a, b, c, d);
+	model = rte_cpu_get_model(a);
+
+	if (check_model_wsm_nhm(model))
+		mult = 133;
+	else if ((c & bit_AVX) || check_model_gdm_dnv(model))
+		mult = 100;
+	else
+		return 0;
+
+	ret = rdmsr(0xCE, &tsc_hz);
+	if (ret < 0)
+		return 0;
+
+	return ((tsc_hz >> 8) & 0xff) * mult * 1E6;
+}
+
+enum mmio_tests
+{
+    MMIO_LAT_RD,
+    MMIO_LAT_WR,
+    MMIO_LAT_WRRD,
+    MMIO_BW_RD,
+    MMIO_BW_WR,
+    MMIO_BW_WRRD
+};
+
+static int compare(const void* a, const void* b)
+{
+    uint64_t c = *(uint64_t*)a;
+    uint64_t d = *(uint64_t*)b;
+
+    if (c < d) return -1;
+    else if (c == d) return 0;
+    else return 1;
+}
+
+static inline long double time_sec(uint64_t cycles)
+{
+    return ((long double) cycles)/tsc_frequency;
+}
+
+void mmio_lat_cmd(volatile uint8_t* buf, size_t buflen, size_t oplen, off_t offset, unsigned count, int test)
+{
+    // fill with unique pattern
+    static uint8_t cmd_buffer[MAX_CMD_SIZE];
+    for (unsigned i = 0; i < MAX_CMD_SIZE; i += sizeof(uint32_t))
     {
-        perror("open failed");
-        return NULL;
+        *((uint32_t*) (cmd_buffer + i)) = 0xdeadbeef;
     }
 
-    if ((ftruncate(fd, RING_BUFFER_SIZE)) < 0)
-    {
-        perror("trunate failed");
-        return NULL;
-    }
+    off_t current_offset = offset;
+    uint64_t start_time, end_time;
+    unsigned index = 0;
 
-    while (1)
+    while (index < count)
     {
-        if (pwrite(fd, (void*) buffer_rx->addr, RING_BUFFER_SIZE, 0) < 0)
+        switch (test)
         {
-            perror("write failed");
+        case MMIO_LAT_RD:
+            start_time = _rdtsc();
+
+            memcpy_fromio_relaxed(cmd_buffer, buf + current_offset, oplen);
+            rte_io_mb();
+
+            end_time = _rdtsc();
+            break;
+
+        case MMIO_LAT_WR:
+            start_time = _rdtsc();
+
+            memcpy_toio_relaxed(buf + current_offset, cmd_buffer, oplen);
+            rte_io_mb();
+
+            end_time = _rdtsc();
+            break;
+
+        case MMIO_LAT_WRRD:
+            start_time = _rdtsc();
+
+            memcpy_fromio_relaxed(cmd_buffer, buf + current_offset, oplen);
+            memcpy_toio_relaxed(buf + current_offset, cmd_buffer, oplen);
+            rte_io_mb();
+
+            end_time = _rdtsc();
+            break;
+
+        default:
+            fprintf(stderr, "Incorrect latency operation %d\n", test);
+            return;
+        }
+
+        time_journal[index] = end_time - start_time;
+        index++;
+        current_offset += oplen;
+        if (current_offset + oplen > buflen)
+            current_offset = offset;
+    }
+
+    long double mean;
+    uint64_t sum, median, percentile95, percentile99;
+    qsort(time_journal, count, sizeof(uint64_t), compare);
+
+    sum = 0;
+    for (index = 0; index < count; index++)
+        sum += time_journal[index];
+    mean = (1.0l * sum)/count;
+    median = time_journal[count/2];
+    percentile95 = time_journal[95*count/100];
+    percentile99 = time_journal[99*count/100];
+
+    printf("Latency Mean=%Lf Median=%Lf Percentile95=%Lf Percentile99=%Lf\n", time_sec(mean), time_sec(median), time_sec(percentile95), time_sec(percentile99));
+}
+
+struct bw_worker_args {
+    volatile uint8_t* buf;
+    size_t buflen;
+    size_t oplen;
+    off_t offset;
+    unsigned count;
+    int test;
+};
+static struct bw_worker_args bw_args;
+
+void* mmio_bw_cmd_worker(void* arg)
+{
+    uint8_t cmd_buffer[MAX_CMD_SIZE];
+    for (unsigned i = 0; i < MAX_CMD_SIZE; i += sizeof(uint32_t))
+    {
+        *((uint32_t*) (cmd_buffer + i)) = 0xdeadbeef;
+    }
+
+    volatile uint8_t* buf = bw_args.buf;
+    size_t buflen = bw_args.buflen;
+    size_t oplen = bw_args.oplen;
+    off_t offset = bw_args.offset;
+    unsigned count = bw_args.count;
+    int test = bw_args.test;
+
+    off_t current_offset = offset;
+    unsigned index = 0;
+
+    while (start_bw_test == 0) {}
+
+    while (index < count)
+    {
+        switch (test)
+        {
+        case MMIO_BW_RD:
+            memcpy_fromio_relaxed(cmd_buffer, buf + current_offset, oplen);
+            break;
+
+        case MMIO_BW_WR:
+            memcpy_toio_relaxed(buf + current_offset, cmd_buffer, oplen);
+            break;
+
+        case MMIO_BW_WRRD:
+            memcpy_fromio_relaxed(cmd_buffer, buf + current_offset, oplen);
+            memcpy_toio_relaxed(buf + current_offset, cmd_buffer, oplen);
+            break;
+
+        default:
+            fprintf(stderr, "Incorrect bw operation %d\n", test);
             return NULL;
         }
 
-        sleep(1);
+        rte_io_mb();
+
+        index++;
+        current_offset += oplen;
+        if (current_offset + oplen > buflen)
+            current_offset = offset;
     }
+
+    __sync_fetch_and_add(&end_bw_test, 1);
 
     return NULL;
 }
 
-void* stats_main(void* arg)
+void mmio_bw_cmd(volatile uint8_t* buf, size_t buflen, size_t oplen, off_t offset, unsigned count, unsigned threads, int test)
 {
-    struct nfp_cpp* cpp = (struct nfp_cpp*) arg;
-    struct nfp_rtsym_table* symbol_table = nfp_rtsym_table_read(cpp);
-    struct nfp_cpp_area* rx_counters_area = (struct nfp_cpp_area*) malloc(sizeof(struct nfp_cpp_area));
-    struct nfp_cpp_area* tx_counters_area = (struct nfp_cpp_area*) malloc(sizeof(struct nfp_cpp_area));
+    bw_args.buf = buf;
+    bw_args.buflen = buflen;
+    bw_args.oplen = oplen;
+    bw_args.offset = offset;
+    bw_args.count = count;
+    bw_args.test = test;
 
-    uint64_t* rx_counters = (uint64_t*) nfp_rtsym_map(
-                                            symbol_table,
-                                            SYMBOL_RX_STATS,
-                                            8 * sizeof(uint64_t),
-                                    &rx_counters_area);
-    uint64_t* tx_counters = (uint64_t*) nfp_rtsym_map(
-                                            symbol_table,
-                                            SYMBOL_TX_STATS,
-                                            8 * sizeof(uint64_t),
-                                            &tx_counters_area);
-
-    while (1)
+    pthread_t bw_workers[MAX_THREADS];
+    for (unsigned i = 0; i < threads; i++)
     {
-        sleep(1);
-
-        fprintf(stderr, "[RX] %lu %lu %lu %lu %lu %lu %lu %lu\n",
-                    rx_counters[0],
-                    rx_counters[1],
-                    rx_counters[2],
-                    rx_counters[3],
-                    rx_counters[4],
-                    rx_counters[5],
-                    rx_counters[6],
-                    rx_counters[7]);
-
-        fprintf(stderr, "[TX] %lu %lu %lu %lu %lu %lu %lu %lu\n",
-            tx_counters[0],
-            tx_counters[1],
-            tx_counters[2],
-            tx_counters[3],
-            tx_counters[4],
-            tx_counters[5],
-            tx_counters[6],
-            tx_counters[7]);
+        pthread_create(&bw_workers[i], NULL, mmio_bw_cmd_worker, NULL);
     }
 
-    return NULL;
-}
+    uint64_t start_time, end_time;
 
-void configure_device(struct device_meta_t* meta)
-{
-    meta->packet_size = UDP_PACKET_SIZE;
-    meta->buffer_size = RING_BUFFER_SIZE;
-    meta->rx_buffer_iova = buffer_rx->iova;
-    meta->tx_buffer_iova = buffer_tx->iova;
-    meta->rx_head = meta->rx_tail = 0;
-    meta->tx_head = meta->tx_tail = 0;
+    start_time = _rdtsc();
 
-    rte_io_wmb();   /* Flush preceding writes! */
+    start_bw_test = 1;
+    while (end_bw_test != threads) {}
 
-    nn_writeq(1, &meta->start_signal);
-}
+    end_time = _rdtsc();
 
-void* udp_worker(void* arg)
-{
-    struct nfp_cpp* cpp = (struct nfp_cpp*) arg;
-    struct nfp_rtsym_table* symbol_table = nfp_rtsym_table_read(cpp);
-    struct nfp_cpp_area* device_meta_area = (struct nfp_cpp_area*) malloc(sizeof(struct nfp_cpp_area));
-    struct device_meta_t* meta = (struct device_meta_t*)
-                                        nfp_rtsym_map(
-                                            symbol_table,
-                                            SYMBOL_DEVICE_META,
-                                            sizeof(struct device_meta_t),
-                                            &device_meta_area);
-
-    if (meta == NULL)
-        return NULL;
-
-    ring_rx.base_addr = (void*) buffer_rx->addr;
-    ring_rx.capacity = RING_BUFFER_SIZE;
-    ring_rx.entry_size = UDP_PACKET_SIZE;
-    ring_tx.base_addr = (void*) buffer_tx->addr;
-    ring_tx.capacity = RING_BUFFER_SIZE;
-    ring_tx.entry_size = UDP_PACKET_SIZE;
-
-    configure_device(meta);
-
-    while (1)
+    for (unsigned i = 0; i < threads; i++)
     {
-        ring_rx.tail = nn_readl(&meta->rx_tail);
-        ring_tx.head = nn_readl(&meta->tx_head);
+        pthread_join(bw_workers[i], NULL);
+    }
 
-        fprintf(stderr, "RING RX [%u ~ %u]\n", ring_rx.head, ring_rx.tail);
-        fprintf(stderr, "RING TX [%u ~ %u]\n", ring_tx.head, ring_tx.tail);
+    // TODO: Correct by TSC frequency
+    long double bw;
+    bw = (count * threads * oplen * 8.0l)/time_sec(end_time - start_time);
 
-        if (!ringbuffer_empty(&ring_rx) && !ringbuffer_full(&ring_tx))
-        {
-            void* readptr = ringbuffer_front(&ring_rx);
-            void* writeptr = ringbuffer_back(&ring_tx);
+    printf("Bandwidth %Lf Bits/sec\n", bw);
+}
 
-            memcpy(writeptr, readptr, UDP_PACKET_SIZE);
+void usage()
+{
+    fprintf(stderr, "mmio-perf [OPTIONS]\n");
+    fprintf(stderr, "--lat  -L      Latency test (Default)\n");
+    fprintf(stderr, "--bw   -B      Bandwidth test\n");
+    fprintf(stderr, "--read  -r     Read Operation (Default)\n");
+    fprintf(stderr, "--write -w     Write Operation\n");
+    fprintf(stderr, "--wrrd  -m     WR-RD Operation\n");
+    fprintf(stderr, "--cls  -S      Cluster Local Scratch MMIO Target (Default)\n");
+    fprintf(stderr, "--ctm  -C      Cluster Target Memory MMIO Target\n");
+    fprintf(stderr, "--imem -I      Internal Memory MMIO Target\n");
+    fprintf(stderr, "--emem -E      External Memory MMIO Target\n");
+    fprintf(stderr, "--num_threads= -t  Number of Threads in Bandwidth test (Default: 1)\n");
+    fprintf(stderr, "--len= -l      Transfer length in bytes (Default: 8)\n");
+    fprintf(stderr, "--num_ops= -n  Number of transfer operations (Default: 10^6)\n");
+    fprintf(stderr, "--offset= -o   Start offset in the window (Default: 0)\n");
+}
 
-            ringbuffer_pop(&ring_rx);
-            ringbuffer_push(&ring_tx);
+static void* memory_map(struct nfp_cpp* cpp, int memory, size_t* len)
+{
+    struct nfp_rtsym_table* symbol_table = nfp_rtsym_table_read(cpp);
+    struct nfp_cpp_area* device_window_area = (struct nfp_cpp_area*) malloc(sizeof(struct nfp_cpp_area));
 
-            rte_io_wmb();
+#define MAP(NAME, SIZE) \
+    nfp_rtsym_map(symbol_table, NAME, SIZE, &device_window_area)
 
-            nn_writel(ring_tx.tail, &meta->tx_tail);
-            nn_writel(ring_rx.head, &meta->rx_head);
-        }
+    switch (memory) {
+        case 0:
+            *len = CLS_WINDOW_SIZE;
+            return MAP(SYMBOL_CLS_BUF, CLS_WINDOW_SIZE);
+
+        case 1:
+            *len = CTM_WINDOW_SIZE;
+            return MAP(SYMBOL_CTM_BUF, CTM_WINDOW_SIZE);
+
+        case 2:
+            *len = IMEM_WINDOW_SIZE;
+            return MAP(SYMBOL_IMEM_BUF, IMEM_WINDOW_SIZE);
+
+        case 3:
+            *len = EMEM_WINDOW_SIZE;
+            return MAP(SYMBOL_EMEM_BUF, EMEM_WINDOW_SIZE);
+
+        default:
+            fprintf(stderr, "Invalid memory location (%d)\n", memory);
+            return NULL;
     }
 
     return NULL;
@@ -191,33 +411,151 @@ int main(int argc, char* argv[])
         return 0;
     }
 
-    buffer_rx = memzone_reserve(RING_BUFFER_SIZE);
-    buffer_tx = memzone_reserve(RING_BUFFER_SIZE);
+    tsc_frequency = get_tsc_freq_arch();
+    printf("TSC frequency: %lu Hz\n", tsc_frequency);
 
-    memset((void*) buffer_rx->addr, 0, RING_BUFFER_SIZE);
-    memset((void*) buffer_tx->addr, 0, RING_BUFFER_SIZE);
+    /* Parameters */
+    int bw = 0;
+    int location = 0;
+    unsigned num_threads = 1;
+    size_t len = 8;
+    off_t offset = 0;
+    unsigned num_ops = MAX_COUNT;
+    int test = 0;
+    volatile void* buf = NULL;
+    size_t buflen = 0;
 
-    fprintf(stderr, "BUFFER RX %u Physical: [0x%p ~ 0x%p]\n",
-            RING_BUFFER_SIZE, (char*) buffer_rx->iova, (char*) buffer_rx->iova + RING_BUFFER_SIZE);
-    fprintf(stderr, "BUFFER TX %u Physical: [0x%p ~ 0x%p]\n",
-            RING_BUFFER_SIZE, (char*) buffer_rx->iova, (char*) buffer_rx->iova + RING_BUFFER_SIZE);
+    /* Parse args */
+    int c;
+    int option_index;
+    static struct option long_options[] = {
+        {"lat", no_argument, NULL, 'L'},
+        {"bw", no_argument, NULL, 'B'},
+        {"read", no_argument, NULL, 'r'},
+        {"write", no_argument, NULL, 'w'},
+        {"wrrd", no_argument, NULL, 'm'},
+        {"cls", no_argument, NULL, 'S'},
+        {"ctm", no_argument, NULL, 'C'},
+        {"imem", no_argument, NULL, 'I'},
+        {"emem", no_argument, NULL, 'E'},
+        {"num_threads", required_argument, NULL, 't'},
+        {"len", required_argument, NULL, 'l'},
+        {"num_ops", required_argument, NULL, 'n'},
+        {"offset", required_argument, NULL, 'o'},
+        {0, 0, 0, 0}
+    };
 
-    pthread_t log_thread, worker_thread;
-    pthread_create(&log_thread, NULL, log_main, NULL);
-    pthread_create(&worker_thread, NULL, udp_worker, (void*) cpp);
+    while (1) {
+        c = getopt_long(argc, argv, "LBrwmSCIEt:l:n:o:", long_options, &option_index);
 
-#ifdef PKT_STATS
-    pthread_t stats_thread;
-    pthread_create(&stats_thread, NULL, stats_main, (void*) cpp);
-#endif
+        if (c == -1)
+            break;
 
-    nfp_cpp_dev_main(dev, cpp);
-    
-    pthread_join(worker_thread, NULL);
-    pthread_join(log_thread, NULL);
-#ifdef PKT_STATS
-    pthread_join(stats_thread, NULL);
-#endif
+        switch (c) {
+        case 0:
+            break;
+
+        case 'L':
+            bw = 0;
+            break;
+
+        case 'B':
+            bw = 1;
+            break;
+
+        case 'S':
+            location = 0;
+            break;
+
+        case 'C':
+            location = 1;
+            break;
+
+        case 'I':
+            location = 2;
+            break;
+
+        case 'E':
+            location = 3;
+            break;
+
+        case 't':
+            num_threads = (unsigned) atoi(optarg);
+            if (num_threads > MAX_THREADS)
+            {
+                fprintf(stderr, "Too many threads (MAX:%u)\n", MAX_THREADS);
+                usage();
+                return 0;
+            }
+            break;
+
+        case 'l':
+            len = (size_t) atoll(optarg);
+            break;
+
+        case 'n':
+            num_ops = (unsigned) atoi(optarg);
+            if (num_ops > MAX_COUNT)
+            {
+                fprintf(stderr, "Number of transfer operations too large (MAX:%u)\n", MAX_COUNT);
+                usage();
+                return 0;
+            }
+            break;
+
+        case 'o':
+            offset = (off_t) atoll(optarg);
+            if (offset > CACHE_LINE_SIZE)
+            {
+                fprintf(stderr, "Offset greater than CACHE_LINE_SIZE: %u\n", CACHE_LINE_SIZE);
+                usage();
+                return 0;
+            }
+            break;
+
+        case 'r':
+            if (bw)
+                test = MMIO_BW_RD;
+            else
+                test = MMIO_LAT_RD;
+            break;
+
+        case 'w':
+            if (bw)
+                test = MMIO_BW_WR;
+            else
+                test = MMIO_LAT_WR;
+            break;
+
+        case 'm':
+            if (bw)
+                test = MMIO_BW_WRRD;
+            else
+                test = MMIO_LAT_WRRD;
+            break;
+
+        case '?':
+        default:
+            usage();
+            return 0;
+        }
+    }
+
+    buf = memory_map(cpp, location, &buflen);
+    if (buf == NULL)
+    {
+        fprintf(stderr, "Unable to memory map SYMBOLS\n");
+        return 0;
+    }
+
+    if (bw)
+    {
+        mmio_bw_cmd(buf, buflen, len, offset, num_ops, num_threads, test);
+    }
+    else
+    {
+        mmio_lat_cmd(buf, buflen, len, offset, num_ops, test);
+    }
 
     return 0;
 }
