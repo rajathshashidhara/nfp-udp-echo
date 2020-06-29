@@ -19,14 +19,16 @@
 #include "nfp_cpp.h"
 #include "nfp_rtsym.h"
 
-#define SYMBOL_CLS_BUF      "i32._cls_buffer"
-#define SYMBOL_CTM_BUF      "i32._ctm_buffer"
-#define SYMBOL_IMEM_BUF     "_imem_buffer"
-#define SYMBOL_EMEM_BUF     "_emem_buffer"
+#define SYMBOL_CLS_BUF      "i32.me0._cls_buffer"
+#define SYMBOL_CTM_BUF      "i32.me0._ctm_buffer"
+#define SYMBOL_IMEM_BUF     "i32.me0._imem_buffer"
+#define SYMBOL_EMEM_BUF     "i32.me0._emem_buffer"
 
 #define MAX_COUNT       1000000
 #define MAX_CMD_SIZE    1024
-#define MAX_THREADS     32
+#define MAX_THREADS     64
+
+#define DEFAULT_TSC_FREQ    2 * 1000 * 1000 * 1000ull // 2GHz
 
 static uint64_t time_journal[MAX_COUNT];
 
@@ -131,11 +133,11 @@ get_tsc_freq_arch(void)
 	else if ((c & bit_AVX) || check_model_gdm_dnv(model))
 		mult = 100;
 	else
-		return 0;
+		return DEFAULT_TSC_FREQ;
 
 	ret = rdmsr(0xCE, &tsc_hz);
 	if (ret < 0)
-		return 0;
+		return DEFAULT_TSC_FREQ;
 
 	return ((tsc_hz >> 8) & 0xff) * mult * 1E6;
 }
@@ -160,9 +162,9 @@ static int compare(const void* a, const void* b)
     else return 1;
 }
 
-static inline long double time_sec(uint64_t cycles)
+static inline long double time_usec(uint64_t cycles)
 {
-    return ((long double) cycles)/tsc_frequency;
+    return ((long double) cycles * 1E6)/tsc_frequency;
 }
 
 void mmio_lat_cmd(volatile uint8_t* buf, size_t buflen, size_t oplen, off_t offset, unsigned count, int test)
@@ -234,7 +236,7 @@ void mmio_lat_cmd(volatile uint8_t* buf, size_t buflen, size_t oplen, off_t offs
     percentile95 = time_journal[95*count/100];
     percentile99 = time_journal[99*count/100];
 
-    printf("Latency Mean=%Lf Median=%Lf Percentile95=%Lf Percentile99=%Lf\n", time_sec(mean), time_sec(median), time_sec(percentile95), time_sec(percentile99));
+    printf("Latency Mean=%Lf us Median=%Lf us Percentile95=%Lf us Percentile99=%Lf us\n", time_usec(mean), time_usec(median), time_usec(percentile95), time_usec(percentile99));
 }
 
 struct bw_worker_args {
@@ -333,9 +335,9 @@ void mmio_bw_cmd(volatile uint8_t* buf, size_t buflen, size_t oplen, off_t offse
 
     // TODO: Correct by TSC frequency
     long double bw;
-    bw = (count * threads * oplen * 8.0l)/time_sec(end_time - start_time);
+    bw = (count * threads * oplen * 8.0l)/time_usec(end_time - start_time);
 
-    printf("Bandwidth %Lf Bits/sec\n", bw);
+    printf("Bandwidth %Lf MBits/sec\n", bw);
 }
 
 void usage()
@@ -548,6 +550,7 @@ int main(int argc, char* argv[])
         return 0;
     }
 
+    printf("\n");
     if (bw)
     {
         mmio_bw_cmd(buf, buflen, len, offset, num_ops, num_threads, test);

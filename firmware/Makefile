@@ -32,64 +32,6 @@ include Makefile.templates
 
 PKT_NBI_OFFSET ?= 64
 
-# BLM
-$(eval $(call microcode.assemble,blm_obj,$(microc_blocks_dir)/blm,blm_main.uc))
-$(eval $(call microcode.add_flags,blm_obj,-DBLM_CUSTOM_CONFIG -DSINGLE_NBI -DPKT_NBI_OFFSET=$(PKT_NBI_OFFSET)))
-$(eval $(call microcode.add_flags,blm_obj,-DBLM_BLQ_EMEM_TYPE=emem -DNBII=8 -DBLM_INSTANCE_ID=0))
-$(eval $(call microcode.add_flags,blm_obj,-DBLM_INIT_EMU_RINGS))
-$(eval $(call microcode.add_flags,blm_obj,-DNFP_LIB_ANY_NFAS_VERSION))
-$(eval $(call microcode.add_flags,blm_obj,-I$(microc_blocks_dir)/blm))
-$(eval $(call microcode.add_flags,blm_obj,-I$(microc_blocks_dir)/blm/_h))
-$(eval $(call microcode.add_flags,blm_obj,-I$(microc_blocks_dir)/blm/_uc))
-
-#
-# RX Application definition
-#
-$(eval $(call micro_c.compile_with_rtl,rx_obj,rx.c))
-$(eval $(call micro_c.add_src_lib,rx_obj,dma))
-$(eval $(call micro_c.add_src_lib,rx_obj,rxops))
-$(eval $(call micro_c.add_fw_libs,rx_obj,nfp pkt std net))
-$(eval $(call micro_c.add_flags,rx_obj,-I$(ROOT_SRC_DIR)))
-$(eval $(call micro_c.add_flags,rx_obj,-I$(microc_blocks_dir)/blm))
-$(eval $(call micro_c.add_src_lib,rx_obj,libblm,$(microc_blocks_dir)/blm))
-$(eval $(call micro_c.force_include,rx_obj,config))
-
-#
-# TX Application definition
-#
-$(eval $(call micro_c.compile_with_rtl,tx_obj,tx.c))
-$(eval $(call micro_c.add_src_lib,tx_obj,dma))
-$(eval $(call micro_c.add_src_lib,tx_obj,txops))
-$(eval $(call micro_c.add_fw_libs,tx_obj,nfp pkt std net))
-$(eval $(call micro_c.add_flags,tx_obj,-I$(ROOT_SRC_DIR)))
-$(eval $(call micro_c.add_flags,tx_obj,-I$(microc_blocks_dir)/blm))
-$(eval $(call micro_c.add_src_lib,tx_obj,libblm,$(microc_blocks_dir)/blm))
-$(eval $(call micro_c.force_include,tx_obj,config))
-
-#
-# MultiRX Application definition
-#
-$(eval $(call micro_c.compile_with_rtl,mrx_obj,multi_rx.c))
-$(eval $(call micro_c.add_src_lib,mrx_obj,dma))
-$(eval $(call micro_c.add_src_lib,mrx_obj,rxops))
-$(eval $(call micro_c.add_fw_libs,mrx_obj,nfp pkt std net))
-$(eval $(call micro_c.add_flags,mrx_obj,-I$(ROOT_SRC_DIR)))
-$(eval $(call micro_c.add_flags,mrx_obj,-I$(microc_blocks_dir)/blm))
-$(eval $(call micro_c.add_src_lib,mrx_obj,libblm,$(microc_blocks_dir)/blm))
-$(eval $(call micro_c.force_include,mrx_obj,config))
-
-#
-# MultiTX Application definition
-#
-$(eval $(call micro_c.compile_with_rtl,mtx_obj,multi_tx.c))
-$(eval $(call micro_c.add_src_lib,mtx_obj,dma))
-$(eval $(call micro_c.add_src_lib,mtx_obj,txops))
-$(eval $(call micro_c.add_fw_libs,mtx_obj,nfp pkt std net))
-$(eval $(call micro_c.add_flags,mtx_obj,-I$(ROOT_SRC_DIR)))
-$(eval $(call micro_c.add_flags,mtx_obj,-I$(microc_blocks_dir)/blm))
-$(eval $(call micro_c.add_src_lib,mtx_obj,libblm,$(microc_blocks_dir)/blm))
-$(eval $(call micro_c.force_include,mtx_obj,config))
-
 #
 # MMIO Application definition
 #
@@ -101,30 +43,10 @@ $(eval $(call micro_c.add_src_lib,mmio_obj,libblm,$(microc_blocks_dir)/blm))
 $(eval $(call micro_c.force_include,mmio_obj,config))
 
 #
-# Single-Context Application definition
-#
-$(eval $(call fw.add_obj,app_sc,rx_obj,i32.me0))
-$(eval $(call fw.add_obj,app_sc,tx_obj,i32.me1))
-$(eval $(call fw.add_obj,app_sc,blm_obj,i48.me0))
-$(eval $(call fw.link_with_rtsyms,app_sc))
-$(eval $(call fw.add_ppc,app_sc,i8,$(PICO_CODE)))
-
-#
-# Multi-Context Application definition
-#
-$(eval $(call fw.add_obj,app_mc,mrx_obj,i32.me0))
-$(eval $(call fw.add_obj,app_mc,mtx_obj,i32.me1))
-$(eval $(call fw.add_obj,app_mc,blm_obj,i48.me0))
-$(eval $(call fw.link_with_rtsyms,app_mc))
-$(eval $(call fw.add_ppc,app_mc,i8,$(PICO_CODE)))
-
-#
 # MMIO Perf Application definition
 #
-$(eval $(call fw.add_obj,app_mc,mmio_obj,i32.me0))
-$(eval $(call fw.add_obj,app_mc,blm_obj,i48.me0))
+$(eval $(call fw.add_obj,mmio_perf,mmio_obj,i32.me0))
 $(eval $(call fw.link_with_rtsyms,mmio_perf))
-$(eval $(call fw.add_ppc,mmio_perf,i8,$(PICO_CODE)))
 
 #
 # Debug
