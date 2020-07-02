@@ -1,6 +1,4 @@
-# UDP Echo Server on Netronome (NFP-4000/6000) SmartNICs
-
-Example application to access Netronome SmartNICs using userspace driver - PCIe directly to application memory from the NIC
+# MMIO performance benchmark for Netronome (NFP-4000/6000) SmartNICs
 
 ## Building
 - This application uses the `igb_uio` driver distributed with DPDK.
@@ -28,9 +26,7 @@ Compile DPDK from source: https://doc.dpdk.org/guides/linux_gsg/build_dpdk.html 
 
   # Stop previously running firmware and start processing with updated firmware
   firmware/init/wire.sh stop
-  firmware/init/wire.sh start app_sc.fw	# For single-context firmware
-  # or
-  firmware/init/wire.sh start app_mc.fw	# For multi-context firmware
+  firmware/init/wire.sh start mmio_perf.fw	# For single-context firmware
   ```
 
 - Run the userspace driver
@@ -47,22 +43,24 @@ Compile DPDK from source: https://doc.dpdk.org/guides/linux_gsg/build_dpdk.html 
   dpdk-devbind.py --bind=igb_uio b3:00.0
 
   # Run the userspace driver and application
-  user/nfp-user.out
+  user/nfp-user.out [options]
   ```
 
-- Ensure that ARP entry corresponding to the Netronome NIC is added to the test machine (peer connected to host via Netronome NIC interface)
+## Usage
 
-- Send UDP traffic using `iperf` for bandwidth measurement (NOTE: Header size = 42 B. Total packet size = 1408 B)
-
-  ```shell
-  # Create UDP server
-  iperf -u -s --bind 10.0.0.101 -l 1366 -i 1	# On terminal 1
-
-  # Create UDP client
-  # 1408 byte packets at 5200 Mbps for 60 seconds
-  iperf -u -c 10.0.0.105 -l 1366 -i 1 -b 5200M -t 60	# On terminal 2
-
-  # Ping for latency measurement
-  ping 10.0.0.105 -s 1366		# On terminal 3
-  ```
-
+```
+  mmio-perf [OPTIONS]
+    --lat  -L      Latency test (Default)
+    --bw   -B      Bandwidth test
+    --read  -r     Read Operation (Default)
+    --write -w     Write Operation
+    --wrrd  -m     WR-RD Operation
+    --cls  -S      Cluster Local Scratch MMIO Target (Default)
+    --ctm  -C      Cluster Target Memory MMIO Target
+    --imem -I      Internal Memory MMIO Target
+    --emem -E      External Memory MMIO Target
+    --num_threads= -t  Number of Threads in Bandwidth test (Default: 1)
+    --len= -l      Transfer length in bytes (Default: 8)
+    --num_ops= -n  Number of transfer operations (Default: 10^6)
+    --offset= -o   Start offset in the window (Default: 0)
+```
