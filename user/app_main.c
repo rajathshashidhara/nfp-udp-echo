@@ -167,7 +167,7 @@ static inline long double time_usec(uint64_t cycles)
     return ((long double) cycles * 1E6)/tsc_frequency;
 }
 
-void mmio_lat_cmd(volatile uint8_t* buf, size_t buflen, size_t oplen, off_t offset, unsigned count, int test)
+void mmio_lat_cmd(uint8_t* buf, size_t buflen, size_t oplen, off_t offset, unsigned count, int test)
 {
     // fill with unique pattern
     static uint8_t cmd_buffer[MAX_CMD_SIZE];
@@ -187,7 +187,11 @@ void mmio_lat_cmd(volatile uint8_t* buf, size_t buflen, size_t oplen, off_t offs
         case MMIO_LAT_RD:
             start_time = _rdtsc();
 
-            memcpy_fromio_relaxed(cmd_buffer, buf + current_offset, oplen);
+            rte_io_mb();
+
+            memcpy(cmd_buffer, buf + current_offset, oplen);
+            // memcpy_fromio_relaxed(cmd_buffer, buf + current_offset, oplen);
+
             rte_io_mb();
 
             end_time = _rdtsc();
@@ -196,7 +200,11 @@ void mmio_lat_cmd(volatile uint8_t* buf, size_t buflen, size_t oplen, off_t offs
         case MMIO_LAT_WR:
             start_time = _rdtsc();
 
-            memcpy_toio_relaxed(buf + current_offset, cmd_buffer, oplen);
+            rte_io_mb();
+
+            memcpy(buf + current_offset, cmd_buffer, oplen);
+            // memcpy_toio_relaxed(buf + current_offset, cmd_buffer, oplen);
+
             rte_io_mb();
 
             end_time = _rdtsc();
@@ -205,8 +213,13 @@ void mmio_lat_cmd(volatile uint8_t* buf, size_t buflen, size_t oplen, off_t offs
         case MMIO_LAT_WRRD:
             start_time = _rdtsc();
 
-            memcpy_fromio_relaxed(cmd_buffer, buf + current_offset, oplen);
-            memcpy_toio_relaxed(buf + current_offset, cmd_buffer, oplen);
+            rte_io_mb();
+
+            memcpy(cmd_buffer, buf + current_offset, oplen);
+            memcpy(buf + current_offset, cmd_buffer, oplen);
+
+            // memcpy_fromio_relaxed(cmd_buffer, buf + current_offset, oplen);
+            // memcpy_toio_relaxed(buf + current_offset, cmd_buffer, oplen);
             rte_io_mb();
 
             end_time = _rdtsc();
@@ -225,7 +238,7 @@ void mmio_lat_cmd(volatile uint8_t* buf, size_t buflen, size_t oplen, off_t offs
     }
 
     long double mean;
-    uint64_t sum, median, percentile95, percentile99;
+    uint64_t sum, median, percentile95, percentile99, min, max;
     qsort(time_journal, count, sizeof(uint64_t), compare);
 
     sum = 0;
@@ -235,12 +248,15 @@ void mmio_lat_cmd(volatile uint8_t* buf, size_t buflen, size_t oplen, off_t offs
     median = time_journal[count/2];
     percentile95 = time_journal[95*count/100];
     percentile99 = time_journal[99*count/100];
+    min = time_journal[0];
+    max = time_journal[count - 1];
 
-    printf("Latency Mean=%Lf us Median=%Lf us Percentile95=%Lf us Percentile99=%Lf us\n", time_usec(mean), time_usec(median), time_usec(percentile95), time_usec(percentile99));
+    printf("Latency Mean=%Lf us Median=%Lf us Min=%Lf us Max=%Lf us Percentile95=%Lf us Percentile99=%Lf us\n",
+        time_usec(mean), time_usec(median), time_usec(min), time_usec(max), time_usec(percentile95), time_usec(percentile99));
 }
 
 struct bw_worker_args {
-    volatile uint8_t* buf;
+    uint8_t* buf;
     size_t buflen;
     size_t oplen;
     off_t offset;
@@ -257,7 +273,7 @@ void* mmio_bw_cmd_worker(void* arg)
         *((uint32_t*) (cmd_buffer + i)) = 0xdeadbeef;
     }
 
-    volatile uint8_t* buf = bw_args.buf;
+    uint8_t* buf = bw_args.buf;
     size_t buflen = bw_args.buflen;
     size_t oplen = bw_args.oplen;
     off_t offset = bw_args.offset;
@@ -274,16 +290,21 @@ void* mmio_bw_cmd_worker(void* arg)
         switch (test)
         {
         case MMIO_BW_RD:
-            memcpy_fromio_relaxed(cmd_buffer, buf + current_offset, oplen);
+            memcpy(cmd_buffer, buf + current_offset, oplen);
+            // memcpy_fromio_relaxed(cmd_buffer, buf + current_offset, oplen);
             break;
 
         case MMIO_BW_WR:
-            memcpy_toio_relaxed(buf + current_offset, cmd_buffer, oplen);
+            memcpy(buf + current_offset, cmd_buffer, oplen);
+            // memcpy_toio_relaxed(buf + current_offset, cmd_buffer, oplen);
             break;
 
         case MMIO_BW_WRRD:
-            memcpy_fromio_relaxed(cmd_buffer, buf + current_offset, oplen);
-            memcpy_toio_relaxed(buf + current_offset, cmd_buffer, oplen);
+            memcpy(cmd_buffer, buf + current_offset, oplen);
+            memcpy(buf + current_offset, cmd_buffer, oplen);
+
+            // memcpy_fromio_relaxed(cmd_buffer, buf + current_offset, oplen);
+            // memcpy_toio_relaxed(buf + current_offset, cmd_buffer, oplen);
             break;
 
         default:
@@ -304,7 +325,7 @@ void* mmio_bw_cmd_worker(void* arg)
     return NULL;
 }
 
-void mmio_bw_cmd(volatile uint8_t* buf, size_t buflen, size_t oplen, off_t offset, unsigned count, unsigned threads, int test)
+void mmio_bw_cmd(uint8_t* buf, size_t buflen, size_t oplen, off_t offset, unsigned count, unsigned threads, int test)
 {
     bw_args.buf = buf;
     bw_args.buflen = buflen;
@@ -424,7 +445,7 @@ int main(int argc, char* argv[])
     off_t offset = 0;
     unsigned num_ops = MAX_COUNT;
     int test = 0;
-    volatile void* buf = NULL;
+    void* buf = NULL;
     size_t buflen = 0;
 
     /* Parse args */

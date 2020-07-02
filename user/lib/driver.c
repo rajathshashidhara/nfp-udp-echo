@@ -506,7 +506,7 @@ pci_map_device(struct rte_pci_device *dev)
             continue;
 
         snprintf(devname, sizeof(devname),
-            "%s/" PCI_PRI_FMT "/resource%d",
+            "%s/" PCI_PRI_FMT "/resource%d_wc",
             "/sys/bus/pci/devices",
             dev->addr.domain, dev->addr.bus, dev->addr.devid,
             dev->addr.function, i);
